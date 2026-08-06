@@ -1,0 +1,218 @@
+# supgate probe manifest v1 (build plan §10.1–§10.2, M1 scope)
+# Custom-runner probes live in supgate/probes/; the registry maps ids.
+# Generic entries run through the chat_completion runner with a pass DSL:
+#   status, choices, finish_reason(...), content_contains(...), json_parses,
+#   has_keys([...]), error_object, usage_consistent, no_tool_calls
+version: 1
+defaults:
+  timeout_s: 60
+  on_429: warn_then_retry
+
+probes:
+  # ---------- P0 foundation (§10.1) — custom runners ----------
+  - id: p0.echo
+    domain: platform
+    weight: 1.0
+    samples: 1
+    runner: p0.echo
+
+  - id: p0.models
+    domain: platform
+    weight: 1.0
+    samples: 1
+    runner: p0.models
+
+  - id: p0.error_contract
+    domain: platform
+    weight: 1.0
+    samples: 2
+    runner: p0.error_contract
+
+  # ---------- D6 protocol compliance (§10.2) ----------
+  - id: d6.chat.basic
+    domain: D6
+    weight: 1.0
+    samples: 3
+    request:
+      messages:
+        - role: user
+          content: "Say hello in exactly one short sentence."
+      max_tokens: 32
+    pass: "status == 200 and finish_reason('stop') and content_contains('hello')"
+
+  - id: d6.chat.sse
+    domain: D6
+    weight: 1.0
+    samples: 2
+    runner: d6.chat.sse
+
+  - id: d6.messages.shapes
+    domain: D6
+    weight: 1.0
+    samples: 3
+    cases:
+      - name: system_and_user
+        samples: 1
+        request:
+          messages:
+            - role: system
+              content: "You are a helpful assistant."
+            - role: user
+              content: "Say hello in one short sentence."
+        pass: "status == 200 and content_contains('hello')"
+      - name: six_turn_history
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "First turn"
+            - role: assistant
+              content: "First reply"
+            - role: user
+              content: "Second turn"
+            - role: assistant
+              content: "Second reply"
+            - role: user
+              content: "Third turn"
+            - role: assistant
+              content: "Third reply"
+            - role: user
+              content: "Say hello in one short sentence."
+        pass: "status == 200 and content_contains('hello')"
+      - name: trailing_assistant_prefill
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "Say hello in one short sentence."
+            - role: assistant
+              content: "Hello"
+        pass: "status == 200"
+
+  - id: d6.json_mode
+    domain: D6
+    weight: 1.0
+    samples: 2
+    request:
+      messages:
+        - role: user
+          content: 'Return JSON with keys "name" and "value".'
+      max_tokens: 64
+      response_format: { type: json_object }
+    pass: "status == 200 and json_parses and has_keys(['name', 'value'])"
+
+  - id: d6.tool_passthrough
+    domain: D6
+    weight: 1.0
+    samples: 2
+    cases:
+      - name: choice_auto
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "Use a tool to look up the weather."
+          max_tokens: 64
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                description: Look up weather for a city
+                parameters:
+                  type: object
+                  properties:
+                    city: { type: string }
+                  required: [city]
+          tool_choice: auto
+        pass: "status == 200"
+      - name: choice_none
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "Use a tool to look up the weather."
+          max_tokens: 64
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                description: Look up weather for a city
+                parameters:
+                  type: object
+                  properties:
+                    city: { type: string }
+                  required: [city]
+          tool_choice: none
+        pass: "status == 200 and no_tool_calls"
+
+  - id: d6.param_boundaries
+    domain: D6
+    weight: 1.0
+    samples: 5
+    cases:
+      - name: temperature_zero
+        samples: 1
+        request: { temperature: 0 }
+        pass: "status == 200"
+      - name: temperature_two
+        samples: 1
+        request: { temperature: 2 }
+        pass: "status == 200 or (status == 400 and error_object)"
+      - name: top_p_low
+        samples: 1
+        request: { top_p: 0.01 }
+        pass: "status == 200 or (status == 400 and error_object)"
+      - name: n_two
+        samples: 1
+        request: { n: 2 }
+        pass: "choices == 2 or (status == 400 and error_object)"
+      - name: stop_sequence
+        samples: 1
+        request: { stop: ["STOP"] }
+        pass: "status == 200 and finish_reason('stop') or (status == 400 and error_object)"
+
+  - id: d6.max_tokens
+    domain: D6
+    weight: 1.0
+    samples: 2
+    cases:
+      - name: single_token
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "Write a long essay about birds."
+          max_tokens: 1
+        pass: "status == 200 and finish_reason('length')"
+      - name: absurd_limit
+        samples: 1
+        request:
+          messages:
+            - role: user
+              content: "Say hello."
+          max_tokens: 999999
+        pass: "status == 200 or (status == 400 and error_object)"
+
+  - id: d6.usage_fields
+    domain: D6
+    weight: 1.0
+    samples: 2
+    runner: d6.usage_fields
+
+  - id: d6.idempotency
+    domain: D6
+    weight: 1.0
+    samples: 3
+    runner: d6.idempotency
+
+  - id: d6.vision
+    domain: D6
+    weight: 1.0
+    samples: 1
+    runner: d6.vision
+
+  - id: d6.responses_api
+    domain: D6
+    weight: 1.0
+    samples: 1
+    runner: d6.responses_api

@@ -1,0 +1,304 @@
+"""Probe contract (build plan §11.2), RunContext, and shared HTTP helpers.
+
+Every probe gets a :class:`RunContext` (endpoint config, shared httpx client,
+budget, evidence writer) and returns a :class:`ProbeResult`. All HTTP goes
+through :func:`request` so redaction, evidence capture, and budget counting
+happen at one choke point.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from typing import Any, Protocol, runtime_checkable
+
+import httpx
+
+from supgate.evidence import EvidenceWriter, build_curl
+from supgate.models import BudgetTracker, Domain, ProbeResult, SurfaceMap, Verdict
+
+
+@runtime_checkable
+class Probe(Protocol):
+    id: str
+    domain: Domain
+    weight: float
+    samples: int
+
+    def skip_reason(self, surface: SurfaceMap) -> str | None: ...
+
+    async def run(self, ctx: RunContext) -> ProbeResult: ...
+
+
+class RunContext:
+    """Everything a probe needs to talk to the endpoint under test."""
+
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        api_key: str,
+        model: str,
+        claimed_models: list[str],
+        surface: SurfaceMap,
+        client: httpx.AsyncClient,
+        evidence: EvidenceWriter,
+        budget: BudgetTracker,
+    ) -> None:
+        self.endpoint = endpoint.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.claimed_models = claimed_models
+        self.surface = surface
+        self.client = client
+        self.evidence = evidence
+        self.budget = budget
+
+    def headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers.update(extra or {})
+        return headers
+
+    async def request(
+        self,
+        probe_id: str,
+        method: str,
+        path: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        raw_body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        timeout_s: float = 60.0,
+    ) -> httpx.Response:
+        """One instrumented request: timing, evidence capture, budget accounting.
+
+        ``raw_body`` sends an unencoded body (for malformed-body probes).
+        Raises the original transport error so callers can mark the probe
+        fail/skip; evidence for the failed attempt is still recorded.
+        """
+
+        url = f"{self.endpoint}{path}"
+        started = time.perf_counter()
+        try:
+            kwargs: dict[str, Any] = {}
+            if raw_body is not None:
+                kwargs["content"] = raw_body
+            else:
+                kwargs["json"] = payload
+            response = await self.client.request(
+                method, url, headers=self.headers(headers), timeout=timeout_s, **kwargs
+            )
+            duration_ms = (time.perf_counter() - started) * 1000
+        except Exception as exc:  # noqa: BLE001 - transport errors are per-probe evidence
+            duration_ms = (time.perf_counter() - started) * 1000
+            curl = build_curl(method, url, self.headers(headers), payload)
+            self.evidence.save(
+                probe_id,
+                method=method,
+                url=url,
+                request_headers=self.headers(headers),
+                request_body=payload,
+                status=0,
+                response_headers=None,
+                response_body=f"transport error: {type(exc).__name__}: {exc}",
+                curl=curl,
+            )
+            raise
+
+        body = _decode_body(response, payload)
+        self.budget.add(json.dumps(payload or {}), _text_of(body))
+        curl = build_curl(method, url, response.request.headers, payload)
+        self.evidence.save(
+            probe_id,
+            method=method,
+            url=url,
+            request_headers=self.headers(headers),
+            request_body=payload,
+            status=response.status_code,
+            response_headers=dict(response.headers),
+            response_body=body,
+            curl=curl,
+        )
+        response._supgate_ms = duration_ms  # type: ignore[attr-defined]
+        return response
+
+
+def _decode_body(response: httpx.Response, payload: dict[str, Any] | None) -> Any:
+    """Best-effort JSON decode; falls back to text (e.g. SSE bodies)."""
+
+    text = response.text
+    if payload and payload.get("stream"):
+        return text
+    try:
+        return response.json()
+    except Exception:  # noqa: BLE001
+        return text
+
+
+def _text_of(body: Any) -> str:
+    if isinstance(body, str):
+        return body
+    return json.dumps(body or {})
+
+
+async def request_or_none(
+    ctx: RunContext,
+    probe_id: str,
+    method: str,
+    path: str,
+    **kwargs: Any,
+) -> tuple[httpx.Response | None, str | None]:
+    """ctx.request that never raises; returns (response, error) instead.
+
+    Evidence is still recorded inside ctx.request on failure.
+    """
+
+    try:
+        return await ctx.request(probe_id, method, path, **kwargs), None
+    except Exception as exc:  # noqa: BLE001
+        return None, str(exc)
+
+
+def probe_result(
+    probe_id: str,
+    domain: Domain,
+    *,
+    successes: int,
+    attempts: int,
+    notes: list[str] | None = None,
+    error: str | None = None,
+    weight: float = 1.0,
+) -> ProbeResult:
+    """Verdict from a pass/fail count: all pass -> pass, partial -> warn, none -> fail."""
+
+    notes = notes or []
+    if attempts == 0:
+        verdict, score = "fail", 0.0
+    elif successes == attempts:
+        verdict, score = "pass", 100.0
+    elif successes > 0:
+        verdict, score = "warn", round(successes / attempts * 100, 1)
+    else:
+        verdict, score = "fail", 0.0
+    return ProbeResult(
+        probe_id=probe_id,
+        domain=domain,
+        verdict=verdict,
+        score=score,
+        weight=weight,
+        successes=successes,
+        attempts=attempts,
+        notes=notes,
+        error=error,
+    )
+
+
+class RateLimitError(Exception):
+    """Persistent 429 after one backoff retry — §10 says WARN, never FAIL."""
+
+    def __init__(self, status: int, note: str) -> None:
+        self.status = status
+        self.note = note
+        super().__init__(note)
+
+
+class ServerError(Exception):
+    """Persistent 5xx after one backoff retry — §10 says WARN, never FAIL."""
+
+    def __init__(self, status: int, note: str) -> None:
+        self.status = status
+        self.note = note
+        super().__init__(note)
+
+
+async def request_with_retry(
+    ctx: RunContext,
+    probe_id: str,
+    method: str,
+    path: str,
+    *,
+    backoff_s: float = 0.5,
+    **kwargs: Any,
+) -> httpx.Response:
+    """One instrumented request with one backoff retry on 429/5xx (§10).
+
+    Single home for the global retry policy used by every custom P0/D6
+    probe. Returns the response once a status outside 429/5xx is seen
+    (success, or a 401/400 the probe needs to inspect). A transport error
+    propagates unchanged so callers keep it FAIL. A persistent 429/5xx
+    raises :class:`RateLimitError`/:class:`ServerError`; callers convert
+    those to an explicit WARN using the carried ``note``.
+    """
+
+    for attempt in range(2):
+        response = await ctx.request(probe_id, method, path, **kwargs)
+        if response.status_code == 429 or response.status_code >= 500:
+            if attempt == 0:
+                await asyncio.sleep(backoff_s)
+                continue
+            if response.status_code == 429:
+                raise RateLimitError(
+                    response.status_code,
+                    f"{probe_id}: rate-limited (429) after retry — Warn per §10, rerun with backoff",
+                )
+            raise ServerError(
+                response.status_code,
+                f"{probe_id}: server error (status {response.status_code}) after retry — Warn per §10",
+            )
+        return response
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def warn_result(
+    probe_id: str,
+    domain: Domain,
+    *,
+    notes: list[str],
+    error: str | None = None,
+    weight: float = 1.0,
+    attempts: int = 1,
+    score: float = 50.0,
+) -> ProbeResult:
+    """§10: persistent 429/5xx is an explicit WARN, never a silent FAIL."""
+
+    return ProbeResult(
+        probe_id=probe_id,
+        domain=domain,
+        verdict=Verdict.WARN,
+        score=score,
+        weight=weight,
+        successes=0,
+        attempts=attempts,
+        notes=notes,
+        error=error,
+    )
+
+
+def probe_result_with_warn(
+    probe_id: str,
+    domain: Domain,
+    *,
+    successes: int,
+    attempts: int,
+    notes: list[str] | None = None,
+    error: str | None = None,
+    weight: float = 1.0,
+    warn_failures: bool = False,
+    transport_failures: bool = False,
+) -> ProbeResult:
+    """probe_result, except §10 converts a total 429/5xx failure to WARN.
+
+    When every failure came from persistent 429/5xx (and none from a
+    transport error) the probe WARNs instead of FAILing; a transport error
+    keeps the FAIL so ``endpoint_dead`` still triggers on a dead endpoint.
+    """
+
+    if successes == 0 and attempts > 0 and warn_failures and not transport_failures:
+        return warn_result(
+            probe_id, domain, notes=notes or [], error=error, weight=weight, attempts=attempts
+        )
+    return probe_result(
+        probe_id, domain, successes=successes, attempts=attempts,
+        notes=notes, error=error, weight=weight,
+    )

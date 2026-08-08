@@ -25,12 +25,13 @@ data, and validation decisions.
 | 8 | [08-output-data-contract.md](08-output-data-contract.md) | Schema v2, evidence, baselines, SQLite, report/export contracts |
 | 9 | [09-testing-validation-plan.md](09-testing-validation-plan.md) | Fixtures, replay, live validation, quality gates, cost safety |
 | 10 | [10-open-decisions.md](10-open-decisions.md) | Owner decisions and blockers that must be resolved |
+| 11 | [11-m2-build-status.md](11-m2-build-status.md) | Implemented scope, offline acceptance, live blockers, carry-over |
 
 ## Authority rules
 
 When documents disagree, use this order:
 
-1. Current source and tests define shipped M1 behavior.
+1. Current source and tests define implemented M2 behavior.
 2. `06-m2-probe-spec.md` defines M2 probe behavior and tolerances.
 3. `08-output-data-contract.md` schema v2 defines target persisted output and
    supersedes the section 13 SQLite/baseline scaffold in the exported build
@@ -59,21 +60,23 @@ When documents disagree, use this order:
 
 | State | Scope |
 | --- | --- |
-| Current M1 | 14 probes: 3 P0 + 11 D6; JSON bundles, evidence, scoring, history; 106 tests |
-| Weekend Must | Streaming foundation plus 10 core D4 probes, baselines, billing recount, veto wiring |
-| Weekend Stretch | `d4.reasoning_cache_fields`, D2/D8 slices, M4 report, first supplier live run |
-| Later | Full D2/D8, authenticity v1.1, scheduled monitoring, partner-facing reports |
+| Current M2 | 37 registered probes: 25 in `adhoc` (3 P0 + 11 D6 + 11 D4), plus 2 D2 + 10 D8 in `full`; schema-2 bundles, baselines, vetoes, evidence, scoring, history |
+| Weekend Must | Implemented and offline-verified; official baseline validation remains key-blocked |
+| Weekend Stretch | `d4.reasoning_cache_fields` and D2/D8 implemented; M4 report and supplier live run carried over |
+| Later | Authenticity v1.1, scheduled monitoring, and partner-facing reports |
 
-## Today preparation output
+## Build output
 
 - Product charter and realistic weekend scope are documented.
 - Architecture, trust boundaries, run flow, and assurance loop have Mermaid
   diagrams.
-- M2 probe contracts and schema v2 are implementation-ready drafts.
+- M2 probe contracts and schema v2 are implemented and fixture-verified.
 - Research landscape is sourced and separates facts, inference, and
   recommendation.
 - Testing, replay, live-key isolation, and false-accusation guardrails are
   defined before implementation.
+- The finalized operator sequence, bug packet, debug loop, and improvement
+  backlog are in `12-operator-test-plan.md`.
 - Open owner decisions remain visible in `10-open-decisions.md`.
-
-No M2 application code is intentionally changed by this design pack.
+- The exact technical status and carry-over are recorded in
+  `11-m2-build-status.md`.

@@ -181,6 +181,8 @@ def _eval(node: Any, env: dict[str, Any]) -> Any:
     if op == "cmp":
         _, key, comparison, expected = node
         value = env.get(key)
+        if comparison == "=":
+            comparison = "=="  # single '=' is accepted as equality (§11.3 DSL)
         if comparison == "==":
             return value == expected
         if comparison == "!=":

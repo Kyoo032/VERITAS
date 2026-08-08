@@ -11,7 +11,14 @@ from __future__ import annotations
 
 import json
 
-from supgate.models import Domain, ProbeResult, SurfaceMap, Verdict
+from supgate.models import (
+    Domain,
+    ProbeResult,
+    StreamResult,
+    SurfaceMap,
+    TimingSample,
+    Verdict,
+)
 from supgate.probes.base import (
     RateLimitError,
     RunContext,
@@ -19,6 +26,7 @@ from supgate.probes.base import (
     probe_result,
     probe_result_with_warn,
     request_with_retry,
+    text_content,
 )
 
 
@@ -60,10 +68,11 @@ class SseProbe:
         notes: list[str] = []
         warn_failures = False
         transport_failures = False
+        samples: list[TimingSample] = []
         for i in range(self.samples):
             try:
-                response = await request_with_retry(
-                    ctx, self.id, "POST", "/chat/completions",
+                result = await ctx.stream(
+                    self.id, "/chat/completions",
                     payload={
                         "model": ctx.model,
                         "messages": [{"role": "user", "content": "Say hello in one short sentence."}],
@@ -79,17 +88,11 @@ class SseProbe:
                 transport_failures = True
                 notes.append(f"sample {i}: transport error: {exc}")
                 continue
-            text = response.text
-            events = parse_sse(text)
-            terminated = "[DONE]" in text
-            deltas = "".join(
-                chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                for chunk in events
-                if chunk.get("choices")
-            )
+            terminated = "[DONE]" in result.body
+            deltas = result.events[-1].delta if result.events else ""
             ok = (
-                response.status_code == 200
-                and bool(events)
+                result.status == 200
+                and bool(result.events)
                 and terminated
                 and deltas.strip() != ""
             )
@@ -97,13 +100,16 @@ class SseProbe:
                 successes += 1
             else:
                 notes.append(
-                    f"sample {i}: status={response.status_code} events={len(events)} "
-                    f"done={terminated} deltas={len(deltas)!r}"
+                    f"sample {i}: status={result.status} events={len(result.events)} "
+                    f"done={terminated} deltas={deltas!r}"
                 )
-        return probe_result_with_warn(
+            samples.extend(_timing_samples(result))
+        result = probe_result_with_warn(
             self.id, self.domain, successes=successes, attempts=self.samples, notes=notes,
             warn_failures=warn_failures, transport_failures=transport_failures,
         )
+        result.samples = samples
+        return result
 
 
 class UsageFieldsProbe:
@@ -128,6 +134,7 @@ class UsageFieldsProbe:
         notes: list[str] = []
         warn_failures = False
         transport_failures = False
+        samples: list[TimingSample] = []
 
         try:
             response = await request_with_retry(ctx, self.id, "POST", "/chat/completions", payload=payload)
@@ -149,7 +156,7 @@ class UsageFieldsProbe:
 
         stream_payload = {**payload, "stream": True, "stream_options": {"include_usage": True}}
         try:
-            response = await request_with_retry(ctx, self.id, "POST", "/chat/completions", payload=stream_payload)
+            result = await ctx.stream(self.id, "/chat/completions", payload=stream_payload)
         except (RateLimitError, ServerError) as exc:
             warn_failures = True
             notes.append(f"stream: {exc.note}")
@@ -159,17 +166,21 @@ class UsageFieldsProbe:
             notes.append(f"stream: transport error: {exc}")
             checks.append(False)
         else:
-            events = parse_sse(response.text)
-            usage = next((chunk.get("usage") for chunk in events if chunk.get("usage")), None)
+            usage = next(
+                (event.usage for event in result.events if event.usage is not None), None
+            )
             stream_ok = _usage_consistent(usage)
             checks.append(stream_ok)
             if not stream_ok:
                 notes.append(f"stream usage missing/inconsistent: {usage}")
+            samples.extend(_timing_samples(result))
 
-        return probe_result_with_warn(
+        result = probe_result_with_warn(
             self.id, self.domain, successes=sum(checks), attempts=2, notes=notes,
             warn_failures=warn_failures, transport_failures=transport_failures,
         )
+        result.samples = samples
+        return result
 
 
 class VisionProbe:
@@ -221,7 +232,7 @@ class VisionProbe:
             )
         body = _json(response)
         if response.status_code == 200:
-            content = body.get("choices", [{}])[0].get("message", {}).get("content", "") if body else ""
+            content = text_content(body.get("choices", [{}])[0].get("message", {}).get("content")) if body else ""
             ok = bool(content and content.strip())
             return probe_result(
                 self.id, self.domain, successes=1 if ok else 0, attempts=1,
@@ -296,6 +307,23 @@ def _json(response) -> dict | None:
         return response.json()
     except Exception:  # noqa: BLE001
         return None
+
+
+def _timing_samples(result: StreamResult) -> list[TimingSample]:
+    """Map one streamed exchange onto ProbeResult timing samples (§3.3, §8).
+
+    Only actual streamed exchanges (at least one SSE event) contribute
+    timing; error/status bodies carry no TTFT and are skipped.
+    """
+
+    if not result.events:
+        return []
+    samples: list[TimingSample] = []
+    if result.ttft_ms is not None:
+        samples.append(TimingSample(kind="ttft", ms=result.ttft_ms))
+    samples.append(TimingSample(kind="e2e", ms=result.e2e_ms))
+    samples.extend(TimingSample(kind="itl", ms=delay) for delay in result.inter_event_ms)
+    return samples
 
 
 def _usage_consistent(usage: dict | None) -> bool:

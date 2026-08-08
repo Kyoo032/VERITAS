@@ -1,13 +1,12 @@
 # VERITAS / supgate - System Architecture
 
-*Status: tracks the implemented M1 (foundation + D6 protocol) and the target M2-M6
-shapes. Source of truth for design intent: `supgate-build-plan.md` (Notion export,
-6 Aug 2026). This document mirrors the code as of M1 and marks everything that is
-"target" (not yet built). Target baseline schema: `docs/08-output-data-contract.md`
-schema v2, which explicitly supersedes the build-plan scaffold for baselines.*
+*Status: updated for the implemented M2 candidate. The M1 column remains a
+historical rollback snapshot; later milestones remain design targets. Current
+build status is in `11-m2-build-status.md` and the operator sequence is in
+`12-operator-test-plan.md`.*
 
 - Doc 02 of the VERITAS docs set. Companion: `03-evaluation-flow.md` (runtime behaviour).
-- Codebase: `C:\Users\rizky\Documents\VERITAS` (package/CLI name `supgate`, v0.1.0).
+- Codebase: `C:\Users\rizky\Documents\VERITAS` (package/CLI name `supgate`, v0.2.0).
 
 ---
 
@@ -44,29 +43,30 @@ Design goals, in priority order:
 9. **Manifest-driven extension.** New probes register through YAML plus a named
    runner; calibration constants stay editable without code changes.
 
-## 2. Current M1 vs target M2-M6 module scope
+## 2. Historical M1 vs current M2 and targets
 
-| Module | M1 (now) | M2 | M3 | M4 | M5 | M6 |
+| Module | M1 snapshot | M2 (current) | M3 | M4 | M5 | M6 |
 | --- | --- | --- | --- | --- | --- | --- |
 | P0 foundation probes | Implemented | - | - | - | - | - |
 | D6 protocol suite | Implemented (11 probes) | - | - | - | - | - |
-| D4 fingerprints / billing | Stub classes, **not registered** | Implement | - | - | - | - |
-| D2 load + needle recall | Stub classes, not registered | - | Implement | - | - | - |
-| D8 capability suites | Stub classes, not registered | - | Implement | - | - | - |
+| D4 fingerprints / billing | Stub classes, **not registered** | Implemented (11) | - | - | - | - |
+| D2 load + needle recall | Stub classes, not registered | Implemented (2, full mode) | Extend | - | - | - |
+| D8 capability suites | Stub classes, not registered | Implemented (10, full mode) | Extend | - | - | - |
 | v1.1 authenticity (auth.*) | Stub class, not registered | - | - | - | Implement | - |
-| Scoring / assurance / vetoes | Implemented (vetoes empty) | Wire real vetoes | - | - | - | - |
+| Scoring / assurance / vetoes | Implemented (vetoes empty) | Four vetoes implemented | - | - | - | - |
 | Evidence + redacted curl | Implemented | - | - | - | - | - |
-| Tokenizers (tiktoken/HF) | Absent (`tokenizers.py`) | Add | - | - | - | - |
-| Baseline store + `baseline` cmd | Dir exists; CLI stub | Implement | - | - | - | - |
+| Tokenizers (tiktoken/HF) | Absent (`tokenizers.py`) | tiktoken implemented | - | - | - | - |
+| Baseline store + `baseline` cmd | Dir exists; CLI stub | Implemented (schema 2) | - | - | - | - |
 | HTML/PDF report renderer | Absent (`report/`) | - | - | Implement | - | - |
-| Run history (SQLite) | Implemented (runs, probe_results) | Add baselines table | - | - | - | - |
+| Run history (SQLite) | Implemented (runs, probe_results) | SQLite schema v2 implemented | - | - | - | - |
 | QA issue export | CLI stub (`export-qa`) | - | - | Implement | - | - |
 | Scheduled assurance runs | Absent | - | - | - | - | Implement |
-| Budget pricing table | Naive char heuristic | Replace with pricing table | - | - | - | - |
-| Concurrency (D2 load matrix) | Reserved (semaphore 1..50) | - | Used at concurrency 10 | - | - | - |
+| Budget pricing table | Naive char heuristic | Per-model pricing implemented | - | - | - | - |
+| Concurrency | Reserved (semaphore 1..50) | Probe scheduler + D2 matrix implemented | Extend | - | - | - |
 
-M1 catalog actually runnable: **14 probes** (3 P0 + 11 D6) from
-`supgate/manifests/probes.yaml` (manifest version 1).
+Current catalog: **37 registered probes** from
+`supgate/manifests/probes.yaml` (manifest version 3). Adhoc executes 25 and
+explicitly skips the 12 full-only D2/D8 probes.
 
 M2 core D4 scope is 11 probes (7 fingerprint + 4 billing). The build-weekend
 Must tier builds 10 of them; `d4.reasoning_cache_fields` stays in M2 scope but
@@ -185,12 +185,12 @@ Boundary rules:
 
 | File | Responsibility | Status |
 | --- | --- | --- |
-| `supgate/cli.py` | Typer entrypoints: `run`, `history`, `report`, `baseline`, `export-qa`. Env-only key resolution, SLA parsing, exit-code mapping (0/2/3). | Implemented; `report`/`baseline`/`export-qa` are stubs |
-| `supgate/orchestrator.py` | Async run loop, P0-first probe ordering, concurrency semaphore (validated 1..50), per-probe decision chain (skip / budget / mode / run), bundle assembly, `endpoint_dead()`, `summary()`, `_vetoes()` (reserved empty), `_calibration()` | Implemented (M1) |
+| `supgate/cli.py` | Typer entrypoints: `run`, `history`, `report`, `baseline`, `export-qa`. Env-only key resolution, SLA parsing, exit-code mapping (0/2/3). | Implemented; baseline is live, report/export remain explicit M4 failures |
+| `supgate/orchestrator.py` | Async run loop, P0-first ordering, bounded concurrent probes, decision chain, schema-2 bundle, four vetoes, calibration, transit/authenticity synthesis | Implemented (M2) |
 | `supgate/models.py` | Pydantic contract: `Domain`, `Verdict`, `Assurance`, `ProbeResult`, `SurfaceMap`, `DomainScore`, `SLA`, `Veto`, `AssuranceVerdict`, `CalibrationSnapshot`, `RunBundle`, `BudgetTracker`, `TimingSample` | Implemented |
 | `supgate/registry.py` | YAML manifest loader; generic `chat_completion` runner; `CUSTOM_RUNNERS` id-to-class map; placeholder fill; skip-rule evaluation; pass-DSL invocation; retry-to-Warn for generic probes | Implemented (M1) |
 | `supgate/passdsl.py` | Tiny safe pass-criteria evaluator (recursive descent, no `eval`): `and`/`or`/`not`, comparisons, functions (`json_parses`, `has_keys`, `content_contains`, `finish_reason`, `choices`, `error_object`, `usage_consistent`, `no_tool_calls`) | Implemented |
-| `supgate/scoring.py` | Weighted domain means (D6 30 / D4 30 / D8 25 / D2 15), overall normalized over present domains, veto layer, assurance mapping (A/B/C/Disqualified) | Implemented; veto inputs empty in M1 |
+| `supgate/scoring.py` | Weighted domain means (D6 30 / D4 30 / D8 25 / D2 15), overall normalized over present domains, veto layer, assurance mapping (A/B/C/Disqualified) | Implemented; M2 orchestrator supplies corroborated vetoes |
 | `supgate/evidence.py` | Single redaction choke point (sk- keys, bearer tokens, auth/custom headers, URL query secrets); `EvidenceWriter` persists one redacted JSON per exchange; reproducible `curl` builder referencing `$SUPGATE_KEY` | Implemented |
 | `supgate/store.py` | SQLite history at `~/.supgate/history.db`: `runs`, `probe_results`. `baselines` table reserved by plan but not yet created | Implemented (M1); baselines in M2 |
 | `supgate/probes/base.py` | `Probe` protocol, `RunContext` (endpoint, key, client, surface, evidence, budget), `request()` choke point (timing, evidence, budget), `request_or_none()`, `request_with_retry()` (one 429/5xx retry -> Warn), `probe_result()`, `probe_result_with_warn()`, `RateLimitError`/`ServerError`, `warn_result()` | Implemented |
@@ -305,17 +305,16 @@ blocks over the build weekend.
   (`d4.headers_diff` diff source, `auth.rng_fingerprint` distribution,
   `auth.llmmap` reference bank, `auth.kbf_battery` cutoff baselines,
   calibration constants).
-- **Layout:** `baselines/<baseline_id>.json` at repo root (empty now) per
-  `docs/08-output-data-contract.md` section 10, plus a planned `baselines`
-  table in SQLite (docs/08 section 11). The target baseline schema is the
-  `docs/08` schema v2 and **explicitly supersedes the build-plan scaffold**.
-  The table is **not yet created** by `store.py` (M2).
-- **CLI:** `supgate baseline` is a stub (M2). Target form:
-  `supgate baseline record --vendor openai --model gpt-4o --key-env SUPGATE_OPENAI_OFFICIAL_KEY`.
-- **Key env (canonical):** official baselines use
-  `SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, and
-  `SUPGATE_OFFICIAL_BASE_URL` (overrides the vendor's well-known base URL).
-  Baseline recording shares the same env-only + redaction rules as live runs.
+- **Layout:** `baselines/<baseline_id>.json` at repo root is the source of truth
+  per `docs/08-output-data-contract.md` section 10. SQLite schema v2 includes
+  the additive `baselines` table described in section 11.
+- **CLI:** baseline management is implemented. Recording requires the endpoint
+  and key-env name on every invocation:
+  `supgate baseline record --vendor openai --model gpt-4o --endpoint https://api.openai.com/v1 --key-env MY_OFFICIAL_KEY`.
+- **Key and endpoint discipline:** the operator chooses the environment-variable
+  name and passes it with `--key-env`; the endpoint is always explicit through
+  `--endpoint`. No well-known URL or `SUPGATE_OFFICIAL_BASE_URL` fallback is
+  consulted. Baseline recording shares the live-run redaction rules.
 - **Capture kinds:** headers/response-id fingerprints, model alias maps, RNG
   distributions, knowledge-boundary profiles, logprob drift baselines,
   calibration constants per tokenizer family (recount tolerance, wrap-offset

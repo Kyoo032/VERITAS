@@ -2,8 +2,8 @@
 
 Every probe gets a :class:`RunContext` (endpoint config, shared httpx client,
 budget, evidence writer) and returns a :class:`ProbeResult`. All HTTP goes
-through :func:`request` so redaction, evidence capture, and budget counting
-happen at one choke point.
+through :func:`request` or :meth:`RunContext.stream` so redaction, evidence
+capture, and budget counting happen at one choke point.
 """
 
 from __future__ import annotations
@@ -15,8 +15,17 @@ from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
+from supgate.baselines import BaselineRecord
 from supgate.evidence import EvidenceWriter, build_curl
-from supgate.models import BudgetTracker, Domain, ProbeResult, SurfaceMap, Verdict
+from supgate.models import (
+    BudgetTracker,
+    Domain,
+    ProbeResult,
+    StreamedEvent,
+    StreamResult,
+    SurfaceMap,
+    Verdict,
+)
 
 
 @runtime_checkable
@@ -29,6 +38,19 @@ class Probe(Protocol):
     def skip_reason(self, surface: SurfaceMap) -> str | None: ...
 
     async def run(self, ctx: RunContext) -> ProbeResult: ...
+
+
+def text_content(value: Any) -> str:
+    """Normalize string or OpenAI-style text-part content to plain text."""
+
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(text_content(part) for part in value)
+    if isinstance(value, dict):
+        text = value.get("text")
+        return text if isinstance(text, str) else ""
+    return ""
 
 
 class RunContext:
@@ -45,6 +67,8 @@ class RunContext:
         client: httpx.AsyncClient,
         evidence: EvidenceWriter,
         budget: BudgetTracker,
+        selected_baseline: BaselineRecord | None = None,
+        p0_verdicts: dict[str, str] | None = None,
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.api_key = api_key
@@ -54,6 +78,12 @@ class RunContext:
         self.client = client
         self.evidence = evidence
         self.budget = budget
+        self.selected_baseline = selected_baseline
+        # P0 verdict map (probe_id -> verdict value) maintained by the
+        # orchestrator as P0 probes complete; drives D4 prerequisite gating
+        # (§10.3). Populated before any non-P0 probe runs (P0 sorted first,
+        # sequential loop), so reads here are deterministic.
+        self.p0_verdicts = p0_verdicts if p0_verdicts is not None else {}
 
     def headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -123,6 +153,148 @@ class RunContext:
         response._supgate_ms = duration_ms  # type: ignore[attr-defined]
         return response
 
+    async def stream(
+        self,
+        probe_id: str,
+        path: str,
+        *,
+        payload: dict[str, Any],
+        headers: dict[str, str] | None = None,
+        timeout_s: float = 60.0,
+        backoff_s: float = 0.5,
+    ) -> StreamResult:
+        """Stream one SSE exchange and return the completed typed result (§3.3).
+
+        Retry policy matches :func:`request_with_retry`: one backoff retry on
+        429/5xx before any stream bytes are consumed; a persistent 429/5xx
+        raises :class:`RateLimitError`/:class:`ServerError`. Transport errors
+        before any bytes (status-0 evidence) or mid-stream (partial-body
+        evidence) propagate unchanged and are never retried. Evidence and the
+        redacted curl are captured exactly once per call, on every outcome.
+        ``[DONE]`` is not yielded; exhaustion implies it.
+        """
+
+        url = f"{self.endpoint}{path}"
+        req_headers = self.headers(headers)
+        attempts = 0
+        response: httpx.Response | None = None
+        events: list[StreamedEvent] = []
+        lines: list[str] = []
+        first_ms: float | None = None
+        inter: list[float] = []
+        try:
+            for attempt in range(2):
+                response = None
+                # Timers re-anchor per attempt so a retried exchange measures
+                # the successful dispatch only; the client backoff must never
+                # inflate TTFT/E2E latency evidence (docs/05 §6 U1).
+                started = time.perf_counter()
+                async with self.client.stream(
+                    "POST", url, headers=req_headers, json=payload, timeout=timeout_s
+                ) as resp:
+                    attempts += 1
+                    response = resp
+                    if resp.status_code == 429 or resp.status_code >= 500:
+                        if attempt == 0:
+                            await asyncio.sleep(backoff_s)
+                            continue
+                        raw = await _stream_text(resp)
+                        self._save_stream_evidence(probe_id, url, req_headers, payload, resp, raw)
+                        if resp.status_code == 429:
+                            raise RateLimitError(
+                                resp.status_code,
+                                f"{probe_id}: rate-limited (429) after retry — Warn per §10, rerun with backoff",
+                            )
+                        raise ServerError(
+                            resp.status_code,
+                            f"{probe_id}: server error (status {resp.status_code}) after retry — Warn per §10",
+                        )
+                    running = ""
+                    last_ms = started
+                    try:
+                        async for line in resp.aiter_lines():
+                            lines.append(line)
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[5:].strip()
+                            if data == "[DONE]":
+                                continue
+                            arrived = time.perf_counter()
+                            if first_ms is None:
+                                first_ms = arrived
+                            else:
+                                inter.append((arrived - last_ms) * 1000)
+                            last_ms = arrived
+                            delta, usage = _parse_sse_chunk(data)
+                            running += delta
+                            events.append(StreamedEvent(delta=running, arrived_ms=arrived, usage=usage))
+                    except Exception:  # noqa: BLE001 - mid-stream transport error: partial evidence, no retry
+                        raw = "\n".join(lines)
+                        self._save_stream_evidence(probe_id, url, req_headers, payload, resp, raw)
+                        raise
+                    break
+        except (RateLimitError, ServerError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - transport errors are per-probe evidence
+            if response is None:
+                curl = build_curl("POST", url, req_headers, payload)
+                self.evidence.save(
+                    probe_id,
+                    method="POST",
+                    url=url,
+                    request_headers=req_headers,
+                    request_body=payload,
+                    status=0,
+                    response_headers=None,
+                    response_body=f"transport error: {type(exc).__name__}: {exc}",
+                    curl=curl,
+                )
+            raise
+
+        if response is None:
+            raise AssertionError("unreachable")  # pragma: no cover
+        raw = "\n".join(lines)
+        e2e_ms = (time.perf_counter() - started) * 1000
+        self.budget.add(json.dumps(payload or {}), raw)
+        ref, curl = self._save_stream_evidence(probe_id, url, req_headers, payload, response, raw)
+        return StreamResult(
+            status=response.status_code,
+            headers=dict(response.headers),
+            body=raw,
+            events=events,
+            ttft_ms=None if first_ms is None else (first_ms - started) * 1000,
+            e2e_ms=e2e_ms,
+            inter_event_ms=inter,
+            curl=curl,
+            evidence_ref=ref,
+            attempts=attempts,
+        )
+
+    def _save_stream_evidence(
+        self,
+        probe_id: str,
+        url: str,
+        request_headers: dict[str, str],
+        payload: dict[str, Any],
+        response: httpx.Response,
+        raw: str,
+    ) -> tuple[str, str]:
+        """One evidence doc + redacted curl for a streamed exchange; returns (ref, curl)."""
+
+        curl = build_curl("POST", url, response.request.headers, payload)
+        ref = self.evidence.save(
+            probe_id,
+            method="POST",
+            url=url,
+            request_headers=request_headers,
+            request_body=payload,
+            status=response.status_code,
+            response_headers=dict(response.headers),
+            response_body=raw,
+            curl=curl,
+        )
+        return ref, curl
+
 
 def _decode_body(response: httpx.Response, payload: dict[str, Any] | None) -> Any:
     """Best-effort JSON decode; falls back to text (e.g. SSE bodies)."""
@@ -140,6 +312,41 @@ def _text_of(body: Any) -> str:
     if isinstance(body, str):
         return body
     return json.dumps(body or {})
+
+
+async def _stream_text(response: httpx.Response) -> str:
+    """Read a streamed response's full body as text (status/error bodies)."""
+
+    await response.aread()
+    return response.text
+
+
+def _parse_sse_chunk(data: str) -> tuple[str, dict[str, Any] | None]:
+    """Extract (content delta, usage block) from one SSE ``data:`` payload.
+
+    Malformed or non-dict payloads contribute an empty delta and no usage.
+    """
+
+    try:
+        chunk = json.loads(data)
+    except json.JSONDecodeError:
+        return "", None
+    if not isinstance(chunk, dict):
+        return "", None
+    usage = chunk.get("usage")
+    if not isinstance(usage, dict):
+        usage = None
+    delta = ""
+    choices = chunk.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0]
+        if isinstance(choice, dict):
+            choice_delta = choice.get("delta")
+            if isinstance(choice_delta, dict):
+                content = choice_delta.get("content")
+                if isinstance(content, str):
+                    delta = content
+    return delta, usage
 
 
 async def request_or_none(

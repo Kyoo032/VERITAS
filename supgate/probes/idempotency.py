@@ -22,7 +22,7 @@ import asyncio
 from typing import Any
 
 from supgate.models import Domain, ProbeResult, SurfaceMap, Verdict
-from supgate.probes.base import RunContext, request_or_none
+from supgate.probes.base import RunContext, request_or_none, text_content
 
 LENGTH_SPREAD_BOUND = 0.20
 RETRY_BACKOFF_S = 0.5
@@ -153,7 +153,7 @@ def _content_and_reason(body: dict | None) -> tuple[str, str | None]:
     except (KeyError, IndexError, TypeError):
         return "", None
     message = first.get("message") or {}
-    return message.get("content") or "", first.get("finish_reason")
+    return text_content(message.get("content")), first.get("finish_reason")
 
 
 def _shape(value: Any) -> tuple[Any, ...]:

@@ -17,8 +17,36 @@ import yaml
 
 from supgate.models import Domain, ProbeResult, SurfaceMap, Verdict
 from supgate.passdsl import eval_pass
-from supgate.probes.base import RunContext, probe_result
+from supgate.probes.base import RunContext, probe_result, text_content
+from supgate.probes.d2_load import LoadMatrixProbe, NeedleRecallProbe
+from supgate.probes.d4_billing import (
+    ReasoningCacheFieldsProbe,
+    RecountDeviationProbe,
+    UsagePresenceProbe,
+    WrapOffsetProbe,
+)
+from supgate.probes.d4_fingerprint import (
+    CanaryEchoProbe,
+    HeadersDiffProbe,
+    IdPrefixProbe,
+    ModelEchoProbe,
+    RotationProbe,
+    SelfReportProbe,
+    SseTimingProbe,
+)
 from supgate.probes.d6_protocol import ResponsesApiProbe, SseProbe, UsageFieldsProbe, VisionProbe
+from supgate.probes.d8_capability import (
+    CutoffBatteryProbe,
+    PromptCachingProbe,
+    ReasoningProbe,
+    StructuredStrictProbe,
+    ToolAutoProbe,
+    ToolForcedProbe,
+    ToolMultiturnProbe,
+    ToolParallelProbe,
+    ToolRequiredProbe,
+    ToolStreamProbe,
+)
 from supgate.probes.idempotency import IdempotencyProbe
 from supgate.probes.p0 import EchoProbe, ErrorContractProbe, ModelsProbe
 
@@ -186,7 +214,7 @@ def _env_for(response, payload: dict[str, Any]) -> dict[str, Any]:
     first = choices[0]
     env["finish_reason"] = first.get("finish_reason")
     message = first.get("message", {}) if isinstance(first, dict) else {}
-    env["content"] = message.get("content") or ""
+    env["content"] = text_content(message.get("content"))
     env["tool_calls"] = message.get("tool_calls")
     return env
 
@@ -226,4 +254,27 @@ CUSTOM_RUNNERS: dict[str, type] = {
     "d6.vision": VisionProbe,
     "d6.responses_api": ResponsesApiProbe,
     "d6.idempotency": IdempotencyProbe,
+    "d4.headers_diff": HeadersDiffProbe,
+    "d4.id_prefix": IdPrefixProbe,
+    "d4.model_echo": ModelEchoProbe,
+    "d4.self_report": SelfReportProbe,
+    "d4.canary_echo": CanaryEchoProbe,
+    "d4.sse_timing": SseTimingProbe,
+    "d4.rotation": RotationProbe,
+    "d4.usage_presence": UsagePresenceProbe,
+    "d4.recount_deviation": RecountDeviationProbe,
+    "d4.wrap_offset": WrapOffsetProbe,
+    "d4.reasoning_cache_fields": ReasoningCacheFieldsProbe,
+    "d2.load_matrix": LoadMatrixProbe,
+    "d2.needle_recall": NeedleRecallProbe,
+    "d8.tools.auto": ToolAutoProbe,
+    "d8.tools.forced": ToolForcedProbe,
+    "d8.tools.required": ToolRequiredProbe,
+    "d8.tools.parallel": ToolParallelProbe,
+    "d8.tools.multiturn": ToolMultiturnProbe,
+    "d8.tools.stream": ToolStreamProbe,
+    "d8.structured_strict": StructuredStrictProbe,
+    "d8.reasoning": ReasoningProbe,
+    "d8.cutoff_battery": CutoffBatteryProbe,
+    "d8.prompt_caching": PromptCachingProbe,
 }

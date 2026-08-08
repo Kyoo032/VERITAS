@@ -28,7 +28,7 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
   - (a) Dedicated supplier eval keys on the company cost line (new OpenAI + Anthropic org keys).
   - (b) Personal keys (existing subscriptions), low cost, but mixes personal and company spend.
   - (c) Shared account for the whole team, simplest but couples team usage.
-- **Recommendation:** (a) dedicated eval keys on a personal cost line. Personal keys only as a fallback if the company line cannot be provisioned by the deadline. Canonical official-key env vars: `SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, `SUPGATE_OFFICIAL_BASE_URL`.
+- **Recommendation:** (a) dedicated eval keys on a personal cost line. Personal keys only as a fallback if the company line cannot be provisioned by the deadline. Operators choose the key-env name and provide the endpoint explicitly on every run; there are no shared key/endpoint defaults.
 - **Blocking impact:** without a baseline key, S3 baseline recording and M2 veto verification degrade to fixture-only replays; M5 authenticity baselines (cutoff battery, RNG fingerprint, logprob audit) cannot be calibrated. This is the single highest-risk open item.
 
 ## OD-02 -- Storage home for run bundles and reports
@@ -106,7 +106,7 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
   - (a) Env-only at runtime (current behavior, `--key-env`).
   - (b) `.env` file loaded by the CLI.
   - (c) OS keychain / secrets manager.
-- **Recommendation:** (a) keep env-only at runtime; never a `.env` in the repo; rotate eval keys per engagement; adopt a secrets manager when white-label partners consume the tool as a service. Keys are redacted at the single evidence choke point and never printed in reports. Canonical official-key env vars: `SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, `SUPGATE_OFFICIAL_BASE_URL`.
+- **Recommendation:** (a) keep env-only at runtime; never a `.env` in the repo; rotate eval keys per engagement; adopt a secrets manager when white-label partners consume the tool as a service. Keys are redacted at the single evidence choke point and never printed in reports. Every invocation supplies `--key-env` plus `--base-url` or `--endpoint`; no shared defaults are consulted.
 - **Blocking impact:** operational security for all live runs, and M6 scheduled runs need a defined key source for cron execution.
 
 ## OD-09 -- Scope of SWE-bench
@@ -128,7 +128,7 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
 | --- | --- | --- |
 | -- | Name the standalone project VERITAS | 2026-08-06 |
 | -- | Keep `supgate` as the package/CLI name | 2026-08-06 |
-| -- | Canonical official-key env vars: `SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, `SUPGATE_OFFICIAL_BASE_URL` | 2026-08-06 |
+| -- | Env-only keys and explicit per-invocation endpoints; no shared key or endpoint defaults | 2026-08-08 |
 | -- | Target baseline schema is `docs/08` schema v2, explicitly superseding the build-plan scaffold | 2026-08-06 |
 | -- | M1 catalog is 14 probes (3 P0 + 11 D6) | 2026-08-06 |
 | -- | Weekend Must = M2 core D4 (10 probes); `d4.reasoning_cache_fields` stays M2 scope, weekend Stretch | 2026-08-06 |

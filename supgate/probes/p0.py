@@ -12,6 +12,7 @@ from supgate.probes.base import (
     probe_result,
     probe_result_with_warn,
     request_with_retry,
+    text_content,
 )
 
 _PING = "PONG-"
@@ -19,7 +20,13 @@ _PING = "PONG-"
 
 class EchoProbe:
     """p0.echo — minimal chat with a unique nonce. Separates 'endpoint dead'
-    from 'probe failed' for everything downstream."""
+    from 'probe failed' for everything downstream.
+
+    A 200 with any non-empty output (content or reasoning) proves the endpoint
+    is alive; reasoning models often spend the token budget on
+    ``reasoning_content`` and return empty ``content``, so the nonce echo is a
+    note, never a FAIL (§10: never falsely pass, but liveness is status+output).
+    """
 
     id = "p0.echo"
     domain = Domain.PLATFORM
@@ -38,7 +45,7 @@ class EchoProbe:
                 payload={
                     "model": ctx.model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 16,
+                    "max_tokens": 64,
                     "temperature": 0,
                 },
             )
@@ -54,11 +61,16 @@ class EchoProbe:
             )
         body = _json(response)
         content = _content(body)
-        ok = response.status_code == 200 and nonce in content
+        reasoning = _reasoning_content(body)
+        alive = response.status_code == 200 and bool((content or reasoning).strip())
         notes = []
-        if not ok:
-            notes.append(f"expected 200 + nonce echo, got status={response.status_code}")
-        return probe_result(self.id, self.domain, successes=1 if ok else 0, attempts=1, notes=notes)
+        if not alive:
+            notes.append(f"expected 200 + non-empty output, got status={response.status_code}")
+        elif nonce in content or nonce in reasoning:
+            notes.append("nonce echo verified")
+        else:
+            notes.append("endpoint alive but nonce not echoed (reasoning model paraphrased)")
+        return probe_result(self.id, self.domain, successes=1 if alive else 0, attempts=1, notes=notes)
 
 
 class ModelsProbe:
@@ -172,7 +184,16 @@ def _content(body: dict | None) -> str:
     if not body:
         return ""
     try:
-        return body["choices"][0]["message"]["content"] or ""
+        return text_content(body["choices"][0]["message"]["content"])
+    except (KeyError, IndexError, TypeError):
+        return ""
+
+
+def _reasoning_content(body: dict | None) -> str:
+    if not body:
+        return ""
+    try:
+        return text_content(body["choices"][0]["message"].get("reasoning_content"))
     except (KeyError, IndexError, TypeError):
         return ""
 

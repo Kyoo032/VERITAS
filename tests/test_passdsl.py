@@ -25,6 +25,11 @@ def test_basic_comparisons():
     assert eval_pass("status in [200, 400]", ENV)
 
 
+def test_single_equals_is_equality():
+    assert eval_pass("status = 200", ENV)
+    assert not eval_pass("status = 201", ENV)
+
+
 def test_functions():
     assert eval_pass("json_parses", ENV)
     assert eval_pass("has_keys(['name', 'value'])", ENV)

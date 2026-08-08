@@ -147,8 +147,8 @@ M2 tolerances come from one of three sources, in priority order:
 
 ## 2. Baseline records
 
-The `supgate baseline` CLI stub (`supgate/cli.py`) becomes real in M2. It
-records official-endpoint fingerprints used as calibration source by D4
+The `supgate baseline` CLI became operational in M2. It records
+official-endpoint fingerprints used as calibration source by D4
 probes. The baseline record format below is schema v2 and supersedes the M1
 build-plan section 13 scaffold; readers accept v1 baselines, writers emit v2.
 
@@ -160,7 +160,7 @@ in `docs/08-output-data-contract.md`. Shape:
 ```json
 {
   "schema": 2,
-  "baseline_id": "BL-OFFICIAL-OPENAI-GPT4O-0001",
+  "baseline_id": "BL-OPENAI-GPT-4O-0001",
   "provider_label": "openai",
   "claimed_models": ["gpt-4o"],
   "captured_at": "2026-08-06T00:00:00+00:00",
@@ -194,10 +194,10 @@ in `docs/08-output-data-contract.md`. Shape:
 
 ### 2.3 Capture procedure
 
-- Run the D4 catalog against the official endpoint with
-  `--mode full --out baselines`.
-- The orchestrator collects the `metrics` dicts each probe emits (Section
-  5.3) and folds them into `fingerprints`.
+- Run `supgate baseline record --vendor <vendor> --model <model> --endpoint
+  <official-url> --key-env <fresh-env-name> --out baselines`.
+- The baseline recorder captures the reference exchanges and folds their
+  measurements into `fingerprints`.
 - `provider_label` is supplied by the operator; it is never inferred.
 - Every baseline run must have `p0.echo == pass`; otherwise it is rejected.
 

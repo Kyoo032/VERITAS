@@ -5,4 +5,4 @@ relay fingerprints & billing forensics (D4), load performance (D2),
 capability contracts (D8). See the build plan (supgate-build-plan.md).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

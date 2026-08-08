@@ -383,7 +383,7 @@ flowchart TD
 - M1 veto inputs are empty; the shape is reserved and the disqualifying signals
   (reverse identity, substitution, billing inflation, hidden origin) wire in M2.
 
-## 12. Baseline recording flow (target M2)
+## 12. Baseline recording flow (shipped M2)
 
 ```mermaid
 sequenceDiagram
@@ -393,8 +393,8 @@ sequenceDiagram
     participant "OFF" as Official endpoint
     participant BS as Baseline store
 
-    OP->>CLI: baseline record --vendor openai --model gpt-4o --key-env SUPGATE_OPENAI_OFFICIAL_KEY
-    CLI->>BL: record(vendor, model, key from env)
+    OP->>CLI: baseline record --vendor openai --model gpt-4o --endpoint URL --key-env MY_OFFICIAL_KEY
+    CLI->>BL: record(vendor, model, explicit endpoint, key from named env var)
     loop reference probes (headers, id prefix, self report, RNG, cutoff)
         BL->>"OFF": probe requests with official key
         "OFF"-->>BL: fingerprints + distributions
@@ -405,12 +405,10 @@ sequenceDiagram
     BL->>CLI: summary of captured fingerprint
 ```
 
-Current state: `supgate baseline` is a CLI stub; `baselines/` is an empty
-placeholder dir; the SQLite `baselines` table is not created yet. Target
-baseline file and bundle-reference format: `docs/08-output-data-contract.md`
-sections 10-11 (schema v2), which explicitly supersedes the build-plan
-scaffold. Baseline account ownership and cost line are an open decision
-(plan section 14).
+Current state: `supgate baseline record/list/show/select` and the schema-v2
+baseline file store are implemented. `--endpoint` and `--key-env` are required
+for every recording; no shared endpoint/key defaults are consulted. Baseline
+account ownership and the live cost line remain operator decisions.
 
 ## 13. Scheduled assurance flow (target M6)
 

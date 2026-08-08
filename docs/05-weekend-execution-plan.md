@@ -25,9 +25,9 @@ Owner: Rizky; commercial review: Vincent
 | git repo init + GitHub remote | Rizky | Fri Aug 7 | All branching, rollback, ship checklist |
 
 Missing-key fallback is defined in Section 7 (rollback). Keys are env-only
-(`--key-env`), never in argv or files. Canonical official-key env vars:
-`SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, and
-`SUPGATE_OFFICIAL_BASE_URL` (overrides the vendor's well-known base URL).
+(`--key-env`), never in argv or files. The operator supplies the key-env name
+and `--endpoint` on every baseline recording. No canonical key name, well-known
+URL, or `SUPGATE_OFFICIAL_BASE_URL` fallback is used.
 
 ## 3. Scope tiers
 
@@ -98,7 +98,7 @@ first by plan, not by data):
 | ID | Task | Owner | Timebox | Output |
 | --- | --- | --- | --- | --- |
 | F0 | git init, GitHub remote, branch naming (`feat/m2-d4-*`) | Rizky | 20m | Repo ready |
-| F1 | Confirm keys: OpenAI + Anthropic official (`SUPGATE_OPENAI_OFFICIAL_KEY`, `SUPGATE_ANTHROPIC_OFFICIAL_KEY`, base URL via `SUPGATE_OFFICIAL_BASE_URL`), DPS eval; record owners | Rizky | 20m | Key checklist; missing keys -> rollback S3/U4 |
+| F1 | Confirm operator-owned OpenAI + Anthropic key-env names and explicit endpoints, plus DPS evaluation access; record owners | Rizky | 20m | Key/endpoint checklist; missing inputs -> rollback S3/U4 |
 | F2 | Verify M1: 106 tests, ruff, CLI smoke; tag `SHIPPABLE_M1` | Rizky | 20m | Green baseline tag |
 | F3 | Read `10-open-decisions.md`; resolve or confirm deadline for OD-01/OD-08 | Rizky | 30m | Decisions locked for Sat |
 | F4 | Dependency prep: confirm `tiktoken` + `pytest-cov` install cleanly in the venv (no `pyproject.toml` edit today - that lands with S1/S4 during the weekend); add `jinja2` + headless Chromium only if the U3 stretch is attempted | Rizky | 15m | Dependencies verified for Sat |
@@ -129,7 +129,7 @@ first by plan, not by data):
 | S0 | `RunContext.stream` yields one `StreamedEvent` per SSE data payload with monotonic arrival timestamps; mid-stream retry follows the `request_with_retry` policy (transport stays FAIL, persistent 429/5xx after one retry WARN); evidence captured once at stream end |
 | S1 | tiktoken recount matches known token counts for a fixture battery; pricing table maps claimed model -> per-1K rate; BudgetTracker no longer uses chars/4; naive-rate constant removed; 106 + new tests green |
 | S2 | All 7 D4 fingerprint probes registered and scored; fixture of a stripped-header relay is flagged by `headers_diff`; `id_prefix` distinguishes `chatcmpl-` / `msg_` / vendor patterns on fixtures; canary alteration detected; rotation fixture shows multiple backends |
-| S3 | `supgate baseline record --vendor openai --model gpt-4o` writes a baseline JSON under `baselines/` (docs/08 schema v2); veto fires on fixtures for reverse identity and hidden origin; billing-inflation veto fires on a +88% fixture; `baseline` no longer a CLI stub; Assurance B path is a scoring unit test, not an E2E test |
+| S3 | `supgate baseline record --vendor openai --model gpt-4o --endpoint <official-url> --key-env <fresh-env-name>` writes a baseline JSON under `baselines/` (docs/08 schema v2); veto fires on fixtures for reverse identity and hidden origin; billing-inflation veto fires on a +88% fixture; `baseline` no longer a CLI stub; Assurance B path is a scoring unit test, not an E2E test |
 | S4 | `recount_deviation` flags a +88% inflation fixture within calibrated tolerance; `wrap_offset` detects a constant +11 offset fixture; `usage_presence` passes on non-stream and final stream chunk; 429/5xx stays Warn, not Fail |
 | U1 | TTFT/TPOT/ITL/E2E P50/P90 computed from post-semaphore timers; timers start after semaphore (no load-host queueing); goodput = % requests meeting TTFT<=5s, TPOT<=500ms, E2E<=60s (client SLA overrides); needle verbatim recall pass on fixture |
 | U2 | Each of the 6 tool modes passes independently on the official endpoint; `structured_strict` validates output against schema; cutoff battery matches baseline pattern on official gpt; claude_suite (Stretch only): skips cleanly on OpenAI and runs on Anthropic when attempted |

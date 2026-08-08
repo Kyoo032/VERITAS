@@ -52,6 +52,18 @@ def test_assurance_disqualified_on_veto():
     assert verdict.level == Assurance.DISQUALIFIED
 
 
+def test_assurance_vetoes_equal_input_list():
+    """Invariant V7: assurance.vetoes mirrors the top-level vetoes."""
+    vetoes = [
+        Veto(code="billing_inflation", detail="recount deviated 88%"),
+        Veto(code="hidden_origin", detail="hop markers + contradiction"),
+    ]
+    verdict = assurance(95.0, {}, vetoes, mode="full")
+    assert verdict.level == Assurance.DISQUALIFIED
+    assert verdict.vetoes == vetoes
+    assert [v.code for v in verdict.vetoes] == ["billing_inflation", "hidden_origin"]
+
+
 def test_assurance_b_when_identity_and_capabilities_verified():
     scores = {"D4": _d(Domain.D4, 90), "D8": _d(Domain.D8, 90)}
     verdict = assurance(85.0, scores, [], mode="full")

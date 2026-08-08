@@ -25,17 +25,51 @@ def test_manifest_loads_all_probes(manifest: Path):
     assert "d6.tool_passthrough" in ids
     assert "d6.idempotency" in ids
     assert "d6.json_mode" in ids
+    assert "d4.headers_diff" in ids
+    assert "d4.id_prefix" in ids
+    assert "d4.canary_echo" in ids
+    assert "d4.sse_timing" in ids
+    assert "d4.usage_presence" in ids
+    assert "d4.recount_deviation" in ids
+    assert "d4.wrap_offset" in ids
+    assert "d4.reasoning_cache_fields" in ids
+    assert "d2.load_matrix" in ids
+    assert "d2.needle_recall" in ids
+    assert "d8.tools.auto" in ids
+    assert "d8.tools.forced" in ids
+    assert "d8.tools.required" in ids
+    assert "d8.tools.parallel" in ids
+    assert "d8.tools.multiturn" in ids
+    assert "d8.tools.stream" in ids
+    assert "d8.structured_strict" in ids
+    assert "d8.reasoning" in ids
+    assert "d8.cutoff_battery" in ids
+    assert "d8.prompt_caching" in ids
     assert len(ids) == len(set(ids)), "duplicate probe ids"
 
 
 def test_manifest_version(manifest: Path):
-    assert load_manifest_version(manifest) == "1"
+    assert load_manifest_version(manifest) == "3"
 
 
 def test_custom_runners_resolve(manifest: Path):
     probes = {p.id: p for p in load_probes(manifest)}
     assert type(probes["p0.echo"]).__name__ == "EchoProbe"
     assert type(probes["d6.chat.sse"]).__name__ == "SseProbe"
+    assert type(probes["d4.headers_diff"]).__name__ == "HeadersDiffProbe"
+    assert type(probes["d4.id_prefix"]).__name__ == "IdPrefixProbe"
+    assert type(probes["d4.sse_timing"]).__name__ == "SseTimingProbe"
+    assert type(probes["d4.usage_presence"]).__name__ == "UsagePresenceProbe"
+    assert type(probes["d4.recount_deviation"]).__name__ == "RecountDeviationProbe"
+    assert type(probes["d4.wrap_offset"]).__name__ == "WrapOffsetProbe"
+    assert type(probes["d4.reasoning_cache_fields"]).__name__ == "ReasoningCacheFieldsProbe"
+    assert type(probes["d2.load_matrix"]).__name__ == "LoadMatrixProbe"
+    assert type(probes["d2.needle_recall"]).__name__ == "NeedleRecallProbe"
+    assert type(probes["d8.tools.auto"]).__name__ == "ToolAutoProbe"
+    assert type(probes["d8.structured_strict"]).__name__ == "StructuredStrictProbe"
+    assert type(probes["d8.reasoning"]).__name__ == "ReasoningProbe"
+    assert type(probes["d8.cutoff_battery"]).__name__ == "CutoffBatteryProbe"
+    assert type(probes["d8.prompt_caching"]).__name__ == "PromptCachingProbe"
 
 
 def test_skip_reason_claimed_model_absent():

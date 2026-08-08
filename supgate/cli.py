@@ -8,11 +8,14 @@ the exit code.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
 import typer
 
+from supgate.baseline_recorder import record_baseline
+from supgate.baselines import BaselineError, BaselineStore, select_baseline
 from supgate.models import SLA
 from supgate.orchestrator import Orchestrator, endpoint_dead, summary
 from supgate.store import RunStore
@@ -70,6 +73,26 @@ def run(
     sla: str = typer.Option(None, "--sla", help='Client SLA "ttft=5,tpot=0.5,e2e=60"'),
     budget_usd: float = typer.Option(None, "--budget-usd", help="Per-run cost cap"),
     concurrency: int = typer.Option(10, "--concurrency", help="Max concurrent probes (1..50)"),
+    baseline_dir: Path = typer.Option(
+        Path("baselines"),
+        "--baseline-dir",
+        help="Baseline store directory (docs/08 §10)",
+    ),
+    baseline_id: str = typer.Option(
+        None,
+        "--baseline-id",
+        help="Load exactly this baseline id; aborts on missing/malformed/incompatible",
+    ),
+    allow_family_baseline: bool = typer.Option(
+        False,
+        "--allow-family-baseline",
+        help="Also match family-prefix baselines",
+    ),
+    allow_coarse_baseline: bool = typer.Option(
+        False,
+        "--allow-coarse-baseline",
+        help="Also match coarse vendor/token baselines",
+    ),
 ) -> None:
     """Probe an OpenAI-compatible endpoint and produce a scored run bundle."""
     if mode not in {"adhoc", "full"}:
@@ -79,8 +102,8 @@ def run(
     if not models:
         _abort("at least one --model is required (claimed model name)")
     out.mkdir(parents=True, exist_ok=True)
-    orchestrator = Orchestrator(concurrency=concurrency, budget_usd=budget_usd)
     try:
+        orchestrator = Orchestrator(concurrency=concurrency, budget_usd=budget_usd)
         bundle = asyncio.run(
             orchestrator.run(
                 endpoint=base_url,
@@ -91,6 +114,10 @@ def run(
                 sla=_parse_sla(sla),
                 out_dir=out,
                 budget_usd=budget_usd,
+                baseline_root=baseline_dir,
+                baseline_id=baseline_id,
+                allow_family=allow_family_baseline,
+                allow_coarse=allow_coarse_baseline,
             )
         )
     except typer.Exit:
@@ -122,22 +149,157 @@ def history(
 @app.command()
 def report(bundle: Path = typer.Argument(...), pdf: bool = typer.Option(False, "--pdf")) -> None:
     """Render a run bundle to HTML (PDF export arrives in M4)."""
-    typer.echo(f"HTML report rendering for {bundle} arrives in milestone M4; JSON bundle is the contract today.")
+    _abort(f"report rendering is not implemented until milestone M4 (bundle: {bundle})")
 
 
-@app.command()
-def baseline() -> None:
-    """Record official-endpoint fingerprints (M2)."""
-    typer.echo("baseline recording arrives in milestone M2")
+KNOWN_BASELINE_VENDORS = frozenset({"openai", "anthropic", "generic"})
+
+
+baseline_app = typer.Typer(
+    no_args_is_help=True,
+    help="Official-endpoint baseline fingerprints: record, list, show, select",
+)
+
+
+@baseline_app.command("record")
+def baseline_record(
+    vendor: str = typer.Option(..., "--vendor", help="official vendor: openai | anthropic | generic"),
+    model: str = typer.Option(..., "--model", help="claimed model name, e.g. gpt-4o"),
+    key_env: str = typer.Option(..., "--key-env", help="env var holding the official API key (env-only)"),
+    endpoint: str = typer.Option(
+        ...,
+        "--endpoint",
+        help="official endpoint base URL, e.g. https://api.openai.com/v1 (required every run)",
+    ),
+    out: Path = typer.Option(Path("baselines"), "--out", help="baseline output directory"),
+    evidence_out: Path = typer.Option(Path("runs"), "--evidence-out", help="redacted evidence output directory"),
+    label: str = typer.Option(None, "--label", help="operator baseline label; defaults to the vendor"),
+    model_version: str = typer.Option(None, "--model-version", help="pinned model version, e.g. gpt-4o-2024-08-06"),
+    samples: int = typer.Option(3, "--samples", help="non-stream chat capture samples (1..10)"),
+    streams: int = typer.Option(1, "--streams", help="streamed capture exchanges (1..5)"),
+    confirm_official: bool = typer.Option(
+        False,
+        "--confirm-official",
+        help="operator assertion that the target is an official endpoint (recorded as a note)",
+    ),
+) -> None:
+    """Record official-endpoint fingerprints into baselines/<id>.json (schema v2)."""
+    vendor_key = vendor.lower()
+    if vendor_key not in KNOWN_BASELINE_VENDORS:
+        _abort(f"unknown vendor {vendor!r} (expected openai, anthropic, or generic)")
+    if samples < 1 or samples > 10 or streams < 1 or streams > 5:
+        _abort("--samples must be within 1..10 and --streams within 1..5")
+    api_key = _resolve_key(key_env)
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        record = asyncio.run(
+            record_baseline(
+                vendor=vendor_key,
+                model=model,
+                api_key=api_key,
+                endpoint=endpoint,
+                out=out,
+                label=label,
+                model_version=model_version,
+                samples=samples,
+                streams=streams,
+                evidence_root=evidence_out,
+                confirmed_official=confirm_official,
+            )
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _abort(f"baseline recording failed: {exc}")
+    typer.echo(
+        f"recorded baseline {record.baseline_id} ({record.captured_at}) -> {out / (record.baseline_id + '.json')}"
+    )
+
+
+@baseline_app.command("list")
+def baseline_list(
+    out: Path = typer.Option(Path("baselines"), "--out", help="baseline store directory"),
+    vendor: str = typer.Option(None, "--vendor", help="filter by vendor or provider label"),
+    model: str = typer.Option(None, "--model", help="filter by model name"),
+    json_out: bool = typer.Option(False, "--json", help="emit JSON instead of a table"),
+) -> None:
+    """List baseline records in the store (newest first)."""
+    store = BaselineStore(out)
+    records, errors = store.scan()
+    for error in errors:
+        typer.secho(f"warning: skipped {error}", err=True)
+    if vendor:
+        records = [r for r in records if r.vendor == vendor or r.provider_label == vendor]
+    if model:
+        records = [r for r in records if r.model == model or model in r.claimed_models]
+    records.sort(key=lambda r: (r.captured_at or "", r.baseline_id), reverse=True)
+    if json_out:
+        payload = {
+            "schema": 2,
+            "count": len(records),
+            "baselines": [r.model_dump(mode="json") for r in records],
+        }
+        typer.echo(json.dumps(payload, indent=2))
+        return
+    if not records:
+        typer.echo("no baselines recorded")
+        return
+    for record in records:
+        typer.echo(
+            f"{record.baseline_id}  vendor={record.vendor or '-'}  "
+            f"model={record.model or '-'}  captured_at={record.captured_at or '-'}"
+        )
+
+
+@baseline_app.command("show")
+def baseline_show(
+    baseline_id: str = typer.Argument(..., help="baseline id, e.g. BL-OPENAI-GPT4O-0001"),
+    out: Path = typer.Option(Path("baselines"), "--out", help="baseline store directory"),
+) -> None:
+    """Show one baseline record as JSON; rejects malformed/incompatible files."""
+    store = BaselineStore(out)
+    try:
+        record = store.get(baseline_id)
+    except BaselineError as exc:
+        _abort(f"baseline {baseline_id}: {exc}")
+    if record is None:
+        _abort(f"no baseline {baseline_id!r} in {out}")
+    typer.echo(record.model_dump_json(indent=2))
+
+
+@baseline_app.command("select")
+def baseline_select(
+    model: list[str] = typer.Option(None, "--model", help="claimed model name(s); repeatable"),
+    vendor: str = typer.Option(None, "--vendor", help="restrict to this vendor/provider label"),
+    out: Path = typer.Option(Path("baselines"), "--out", help="baseline store directory"),
+    allow_family: bool = typer.Option(False, "--allow-family", help="also match family-prefix baselines"),
+    allow_coarse: bool = typer.Option(False, "--allow-coarse", help="also match coarse vendor/token baselines"),
+) -> None:
+    """Select the best matching baseline for the claimed model(s) (docs/08 §10.2)."""
+    if not model:
+        _abort("at least one --model is required")
+    store = BaselineStore(out)
+    records, errors = store.scan()
+    for error in errors:
+        typer.secho(f"warning: skipped {error}", err=True)
+    match = select_baseline(records, model, vendor=vendor, allow_family=allow_family, allow_coarse=allow_coarse)
+    if match is None:
+        typer.echo(f"no matching baseline for {', '.join(model)} in {out}")
+        return
+    typer.echo(
+        f"{match.record.baseline_id}  kind={match.kind.value}  "
+        f"matched_on={','.join(match.matched_on)}  captured_at={match.record.captured_at or '-'}"
+    )
+
+
+app.add_typer(baseline_app, name="baseline", help="Record and manage official-endpoint baselines")
 
 
 @app.command()
 def export_qa(bundle: Path = typer.Argument(...)) -> None:
     """Export failed probes as numbered QA issues (M4)."""
-    typer.echo(f"QA issue export for {bundle} arrives in milestone M4")
+    _abort(f"QA issue export is not implemented until milestone M4 (bundle: {bundle})")
 
 
 if __name__ == "__main__":
     app()
-
-

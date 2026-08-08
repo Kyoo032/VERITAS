@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from typer.testing import CliRunner
 
+from supgate.baselines import BaselineError
 from supgate.cli import _parse_sla, app
-from supgate.models import SLA
+from supgate.models import SLA, RunBundle
 
 runner = CliRunner()
 
@@ -72,6 +75,17 @@ def test_run_requires_model(monkeypatch):
     assert "model" in result.output
 
 
+def test_run_concurrency_out_of_range_aborts(monkeypatch):
+    monkeypatch.setenv("SUPGATE_KEY", "sk-test")
+    result = runner.invoke(
+        app,
+        ["run", "--base-url", "https://x.example/v1", "--key-env", "SUPGATE_KEY", "--model", "gpt-4o", "--concurrency", "99"],
+    )
+    assert result.exit_code == 3
+    assert "concurrency" in result.output
+    assert "run aborted:" in result.output
+
+
 def test_invalid_sla_aborts(monkeypatch):
     monkeypatch.setenv("SUPGATE_KEY", "sk-test")
     result = runner.invoke(
@@ -98,7 +112,109 @@ def test_history_empty(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_stubs_exist():
-    assert runner.invoke(app, ["report", "runs/x.json"]).exit_code == 0
-    assert runner.invoke(app, ["baseline"]).exit_code == 0
-    assert runner.invoke(app, ["export-qa", "runs/x.json"]).exit_code == 0
+def _fake_bundle() -> RunBundle:
+    return RunBundle(
+        run_id="SUP-TEST-0001",
+        endpoint="https://x.example/v1",
+        claimed_models=["gpt-4o"],
+        mode="adhoc",
+        started_at="2026-08-07T00:00:00+00:00",
+        finished_at="2026-08-07T00:00:01+00:00",
+        versions={"supgate": "0.1.0", "manifest": "1", "baselines": "none"},
+    )
+
+
+def test_run_wires_baseline_options(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeOrchestrator:
+        def __init__(self, **kwargs):
+            captured["init_kwargs"] = kwargs
+
+        async def run(self, **kwargs):
+            captured["run_kwargs"] = kwargs
+            return _fake_bundle()
+
+    monkeypatch.setenv("SUPGATE_KEY", "sk-test")
+    monkeypatch.setattr("supgate.cli.Orchestrator", FakeOrchestrator)
+    monkeypatch.setattr(
+        "supgate.cli.RunStore",
+        lambda: __import__("supgate.store", fromlist=["RunStore"]).RunStore(tmp_path / "h.db"),
+    )
+    result = runner.invoke(
+        app,
+        ["run", "--base-url", "https://x.example/v1", "--key-env", "SUPGATE_KEY",
+         "--model", "gpt-4o", "--baseline-dir", str(tmp_path / "b"),
+         "--baseline-id", "BL-OPENAI-GPT4O-0001",
+         "--allow-family-baseline", "--allow-coarse-baseline"],
+    )
+    assert result.exit_code == 0
+    assert captured["run_kwargs"]["baseline_root"] == tmp_path / "b"
+    assert captured["run_kwargs"]["baseline_id"] == "BL-OPENAI-GPT4O-0001"
+    assert captured["run_kwargs"]["allow_family"] is True
+    assert captured["run_kwargs"]["allow_coarse"] is True
+    assert captured["init_kwargs"]["budget_usd"] is None
+
+
+def test_run_defaults_baseline_dir_to_baselines(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run(self, **kwargs):
+            captured.update(kwargs)
+            return _fake_bundle()
+
+    monkeypatch.setenv("SUPGATE_KEY", "sk-test")
+    monkeypatch.setattr("supgate.cli.Orchestrator", FakeOrchestrator)
+    monkeypatch.setattr(
+        "supgate.cli.RunStore",
+        lambda: __import__("supgate.store", fromlist=["RunStore"]).RunStore(tmp_path / "h.db"),
+    )
+    result = runner.invoke(
+        app,
+        ["run", "--base-url", "https://x.example/v1", "--key-env", "SUPGATE_KEY",
+         "--model", "gpt-4o"],
+    )
+    assert result.exit_code == 0
+    assert captured["baseline_root"] == Path("baselines")
+    assert captured["baseline_id"] is None
+    assert captured["allow_family"] is False
+    assert captured["allow_coarse"] is False
+
+
+def test_run_explicit_missing_baseline_aborts(monkeypatch, tmp_path):
+    class FakeOrchestrator:
+        def __init__(self, **kwargs):
+            pass
+
+        async def run(self, **kwargs):
+            raise BaselineError("no baseline 'BL-NOPE-0001' in baselines")
+
+    monkeypatch.setenv("SUPGATE_KEY", "sk-test")
+    monkeypatch.setattr("supgate.cli.Orchestrator", FakeOrchestrator)
+    result = runner.invoke(
+        app,
+        ["run", "--base-url", "https://x.example/v1", "--key-env", "SUPGATE_KEY",
+         "--model", "gpt-4o", "--baseline-id", "BL-NOPE-0001"],
+    )
+    assert result.exit_code == 3
+    assert "no baseline 'BL-NOPE-0001'" in result.output
+    assert "run aborted:" in result.output
+
+
+def test_unimplemented_m4_commands_fail_loudly():
+    report = runner.invoke(app, ["report", "runs/x.json"])
+    export = runner.invoke(app, ["export-qa", "runs/x.json"])
+    assert report.exit_code == 3
+    assert export.exit_code == 3
+    assert "not implemented" in report.output
+    assert "not implemented" in export.output
+
+
+def test_baseline_is_subapp_with_help():
+    result = runner.invoke(app, ["baseline"])
+    assert result.exit_code == 2  # bare sub-app invocation is a usage error (help shown)
+    assert "record" in result.output

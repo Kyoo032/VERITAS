@@ -5,24 +5,30 @@ endpoints. Its `supgate` CLI runs a manifest-driven probe catalog against a
 candidate endpoint, scores each domain, produces a run bundle with redacted
 evidence, and records history locally.
 
-**Milestone M1 scope** — foundation + protocol compliance only:
+**Milestone M2 scope** — protocol compliance plus relay and billing assurance:
 
 - **P0** harness self-check: liveness/echo (`p0.echo`), model catalog
   (`p0.models`), error contract (`p0.error_contract`).
 - **D6** protocol compliance: chat basics, SSE framing, message shapes, JSON
   mode, tool passthrough, parameter boundaries, `max_tokens`, usage fields,
   vision, idempotency, Responses API.
-- Scoring (weighted domain means + Supply Assurance Level) and evidence capture.
+- **D4** relay fingerprints: response headers, id families, model echo,
+  self-report, canary integrity, SSE timing, and backend rotation.
+- **D4** billing forensics: usage presence, tiktoken recount, hidden prompt
+  offsets, and reasoning/cache field consistency.
+- **D2** (full mode): three-band load matrix with TTFT/TPOT/ITL/E2E percentiles,
+  client-SLA goodput, and 30K-token needle recall.
+- **D8** (full mode): six tool-call modes, strict structured output, reasoning,
+  knowledge-cutoff battery, and prompt caching.
+- Schema-2 bundles, official baseline recording, four corroborated vetoes,
+  tokenizer-accurate budgets, redacted evidence, and SQLite history.
 
-D4 (relay fingerprints / billing forensics), D2 (load), and D8 (capabilities)
-are stubbed and out of M1 scope. The overall score reflects only the domains
-that actually ran.
+The overall score normalizes over the scored domains that actually ran.
 
 ## Requirements
 
 - Python >= 3.11
-- Windows / PowerShell 5.1 (this repo is developed on Windows; commands below
-  are PowerShell).
+- Windows / PowerShell 5.1 or Linux/WSL with a POSIX shell.
 
 ## Installation (`.venv`)
 
@@ -34,6 +40,14 @@ python -m pip install -e ".[dev]"
 
 The `supgate` console script is then available on PATH while the venv is
 active, or call it directly as `.\.venv\Scripts\supgate.exe`.
+
+Linux/WSL:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
 
 ## CLI run
 
@@ -68,20 +82,40 @@ converted internally to milliseconds.
 
 ### `adhoc` vs `full`
 
-Both modes currently run the **same implemented M1 catalog** (P0 + D6): the
-manifest registers no D2/D8 probes yet, so `adhoc`'s load/capability skip rule
-has nothing to skip. The split takes effect once M2/M3 probes register in the
-manifest — `full` runs the entire implemented catalog while `adhoc` continues
-to skip D2 (load) and D8 (capability) probes.
+Both modes run the implemented catalog: `adhoc` covers P0 + D6 + D4, while
+`full` additionally runs the D2 load matrix/needle recall and the D8 capability
+suite, which are skipped in `adhoc`.
+
+### Official baselines
+
+The API key and endpoint are provided explicitly on every baseline run; there
+are no shared defaults. The key is env-only, and the endpoint must be passed
+each time:
+
+```powershell
+$env:MY_OFFICIAL_KEY = "sk-..."                       # fresh per session
+supgate baseline record --vendor openai --model gpt-4o `
+  --endpoint https://api.openai.com/v1 `
+  --key-env MY_OFFICIAL_KEY --confirm-official
+supgate baseline list
+supgate baseline show BL-OPENAI-GPT-4O-0001
+supgate baseline select --model gpt-4o
+```
+
+`--endpoint` and `--key-env` are required: `supgate baseline record` fails
+loudly when either is missing, and `SUPGATE_OFFICIAL_BASE_URL` / well-known
+vendor URLs are never consulted.
+
+Runs auto-select exact baselines from `baselines/`. Family and coarse matching
+are opt-in through `--allow-family-baseline` and `--allow-coarse-baseline`.
 
 ## Outputs and evidence
 
 Each `run` produces, under `--out` (default `runs/`):
 
-- **`SUP-YYYYMMDD-XXXX.json`** — the run bundle (the contract): run id,
-  endpoint, claimed models, mode, SLA, per-domain scores, overall score,
-  assurance verdict, and one `ProbeResult` per probe with verdict/score,
-  attempt/success counts, notes, and evidence refs.
+- **`SUP-YYYYMMDD-XXXX.json`** — schema-2 run bundle: identity, versions,
+  tokenizer cost, surface/baseline references, scores, assurance/vetoes,
+  transit/authenticity synthesis, and one evidence-backed result per probe.
 - **`evidence/SUP-YYYYMMDD-XXXX/`** — one JSON file per request/response
   exchange. Secrets are redacted (API keys and bearer tokens become
   `sk-abc****WXYZ` stubs, the `Authorization` header becomes
@@ -95,8 +129,8 @@ List recent runs with:
 supgate history --endpoint https://api.supplier.example/v1 --limit 10
 ```
 
-`report`, `baseline`, and `export-qa` are CLI stubs that exit 0 and print a
-placeholder message; they arrive in later milestones (M4 / M2 / M4).
+`report` and `export-qa` are not implemented until M4 and fail explicitly with
+exit code `3`; they never report false success. `baseline` is fully available.
 
 ## Test and lint
 
@@ -104,6 +138,9 @@ placeholder message; they arrive in later milestones (M4 / M2 / M4).
 .\.venv\Scripts\python.exe -m pytest -q      # full suite must pass
 .\.venv\Scripts\python.exe -m ruff check .
 ```
+
+Linux/WSL equivalents are `.venv/bin/python -m pytest -q` and
+`.venv/bin/python -m ruff check .`.
 
 Both must pass before a run is considered shippable.
 
@@ -118,24 +155,13 @@ Both must pass before a run is considered shippable.
 Verdicts live in the report (bundle JSON), **not** the exit code — a run that
 finishes with failing probes still exits `0`.
 
-## Current M1 limitations / M2 next
+## Current limitations / next
 
-- **M1 limitations**
-  - Only P0 + D6 probes implemented. D4, D2, and D8 domains produce no scores,
-    so Assurance caps at `C` (stable black-box `B` requires D4 fingerprint and
-    D8 capability evidence; white-box `A` needs credentials).
-  - Veto layer is a reserved empty list; no disqualifying signals yet.
-  - Budget math is naive (chars/4 ≈ tokens at a blended $0.005/1K rate); no
-    real tokenizer or per-model pricing.
-  - Transport/hop analysis is placeholder (`hop_lower_bound: 1`,
-    `origin_class: unknown`).
-  - HTML/PDF report rendering, baselines, and QA export are CLI stubs.
-
-- **M2 next**
-  - D4 relay fingerprint probes (headers diff, id prefix, model echo,
-    self-report, canary echo, SSE timing, rotation).
-  - D4 billing forensics (usage presence/recount deviation, wrap offset,
-    reasoning cache fields) — depends on tokenizers (tiktoken).
-  - Wire real veto signals (reverse identity, substitution, billing
-    inflation, hidden origin) and the `baseline` command.
-  - Real pricing table for budget tracking.
+- Assurance `B` is reachable in `full` mode when D8 capability evidence
+  verifies; white-box `A` remains out of scope.
+- D8 Claude Messages suite, authenticity v1.1 probes, HTML/PDF reports, and QA
+  export remain later-milestone carry-over.
+- Official OpenAI/Anthropic baselines and the DPS live run require operator
+  keys; the offline fixture suite does not use paid credentials or network.
+- Golden replay bundles remain a testing-plan carry-over; deterministic fake
+  server and adversarial fixture coverage are the current offline gate.

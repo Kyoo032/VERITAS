@@ -2,6 +2,8 @@
 name = "supgate"
 version = "0.2.0"
 description = "VERITAS supplier assurance CLI for black-box evaluation of OpenAI-compatible endpoints"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",

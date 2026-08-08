@@ -1,9 +1,11 @@
-# supgate probe manifest v1 (build plan §10.1–§10.2, M1 scope)
+# supgate probe manifest v3 (build plan §10.1-§10.2; M2 adds the D4 billing
+# forensics probes, docs/06-m2-probe-spec.md §5; M3-pre-registers D2 load and
+# D8 capability probes, build plan §10.5-§10.6, docs/05 U1/U2)
 # Custom-runner probes live in supgate/probes/; the registry maps ids.
 # Generic entries run through the chat_completion runner with a pass DSL:
 #   status, choices, finish_reason(...), content_contains(...), json_parses,
 #   has_keys([...]), error_object, usage_consistent, no_tool_calls
-version: 1
+version: 3
 defaults:
   timeout_s: 60
   on_429: warn_then_retry
@@ -216,3 +218,145 @@ probes:
     weight: 1.0
     samples: 1
     runner: d6.responses_api
+
+  # ---------- D4 relay fingerprints (docs/06-m2-probe-spec.md §4.1) ----------
+  - id: d4.headers_diff
+    domain: D4
+    weight: 1.0
+    samples: 2
+    runner: d4.headers_diff
+
+  - id: d4.id_prefix
+    domain: D4
+    weight: 1.0
+    samples: 10
+    runner: d4.id_prefix
+
+  - id: d4.model_echo
+    domain: D4
+    weight: 0.5
+    samples: 2
+    runner: d4.model_echo
+
+  - id: d4.self_report
+    domain: D4
+    weight: 1.0
+    samples: 2
+    runner: d4.self_report
+
+  - id: d4.canary_echo
+    domain: D4
+    weight: 1.0
+    samples: 2
+    runner: d4.canary_echo
+
+  - id: d4.sse_timing
+    domain: D4
+    weight: 1.0
+    samples: 3
+    runner: d4.sse_timing
+
+  - id: d4.rotation
+    domain: D4
+    weight: 1.5
+    samples: 20
+    runner: d4.rotation
+
+  # ---------- D4 billing forensics (docs/06-m2-probe-spec.md §5) ----------
+  - id: d4.usage_presence
+    domain: D4
+    weight: 1.0
+    samples: 3
+    runner: d4.usage_presence
+
+  - id: d4.recount_deviation
+    domain: D4
+    weight: 2.0
+    samples: 3
+    runner: d4.recount_deviation
+
+  - id: d4.wrap_offset
+    domain: D4
+    weight: 1.0
+    samples: 4
+    runner: d4.wrap_offset
+
+  - id: d4.reasoning_cache_fields
+    domain: D4
+    weight: 1.0
+    samples: 3
+    runner: d4.reasoning_cache_fields
+
+  # ---------- D2 load (build plan §10.5; full mode only) ----------
+  - id: d2.load_matrix
+    domain: D2
+    weight: 1.0
+    samples: 60
+    runner: d2.load_matrix
+
+  - id: d2.needle_recall
+    domain: D2
+    weight: 1.0
+    samples: 1
+    runner: d2.needle_recall
+
+  # ---------- D8 capabilities (build plan §10.6; full mode only) ----------
+  - id: d8.tools.auto
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.tools.auto
+
+  - id: d8.tools.forced
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.tools.forced
+
+  - id: d8.tools.required
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.tools.required
+
+  - id: d8.tools.parallel
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.tools.parallel
+
+  - id: d8.tools.multiturn
+    domain: D8
+    weight: 1.0
+    samples: 2
+    runner: d8.tools.multiturn
+
+  - id: d8.tools.stream
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.tools.stream
+
+  - id: d8.structured_strict
+    domain: D8
+    weight: 1.0
+    samples: 2
+    runner: d8.structured_strict
+
+  - id: d8.reasoning
+    domain: D8
+    weight: 1.0
+    samples: 1
+    runner: d8.reasoning
+
+  - id: d8.cutoff_battery
+    domain: D8
+    weight: 1.0
+    samples: 10
+    runner: d8.cutoff_battery
+
+  - id: d8.prompt_caching
+    domain: D8
+    weight: 1.0
+    samples: 3
+    runner: d8.prompt_caching

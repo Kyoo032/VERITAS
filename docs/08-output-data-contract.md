@@ -118,8 +118,8 @@ persisted; `baseline` records the matched baseline; `transit` is enriched;
   "finished_at": "2026-08-06T09:03:40+00:00",
   "versions": {
     "supgate": "0.2.0",
-    "manifest": "2",
-    "schema": "2",
+    "manifest": "3",
+    "schema": 2,
     "baselines": "BL-OFFICIAL-OPENAI-GPT4O-0001"
   },
   "sla": { "ttft_s": 5.0, "tpot_ms": 500.0, "e2e_s": 60.0 },

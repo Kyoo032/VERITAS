@@ -256,10 +256,11 @@ Custom-logic probes (load matrix, recount, fingerprints, RNG) register named run
 supgate run --base-url https://api.supplier.example/v1 --key-env SUPGATE_KEY \
   --model gpt-4o --mode adhoc --out runs/
 supgate run ... --mode full --sla "ttft=5,tpot=0.5,e2e=60" --budget-usd 25
-supgate baseline record --vendor openai --model gpt-4o --key-env OPENAI_OFFICIAL_KEY
+supgate baseline record --vendor openai --model gpt-4o \
+  --endpoint https://api.openai.com/v1 --key-env MY_OFFICIAL_KEY
 supgate report runs/SUP-20260806-XXXX.json --pdf
-supgate export qa runs/SUP-20260806-XXXX.json    # numbered-list QA issue draft
-supgate history --endpoint api.supplier.example
+supgate export-qa runs/SUP-20260806-XXXX.json    # numbered-list QA issue draft
+supgate history --endpoint https://api.supplier.example/v1
 ```
 
 - **Modes:** `adhoc` = P0 + D6 core + D4 fingerprints + quick billing — minutes, minimal tokens, no load matrix. `full` = entire catalog incl. D2 bands, D8 suites, v1.1 authenticity — 30–60 min.

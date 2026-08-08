@@ -81,7 +81,11 @@ Sources: `supgate-build-plan.md` (Notion export, 6 Aug 2026), M1 repo state, ref
 - Acting as a marketplace or procurement decision-maker.
 - Public grading of vendors.
 
-## 8. M1 current state (2026-08-06)
+## 8. Historical M1 snapshot (2026-08-06)
+
+This section records the rollback baseline, not the current implementation.
+Current M2 scope and verification status are in `11-m2-build-status.md` and the
+operator sequence is in `12-operator-test-plan.md`.
 
 - **Verification:** 106 tests passing (14 probes: 3 P0 + 11 D6), ruff clean, bytecode compile clean.
 - **Implemented:** P0 (echo, models, error contract); D6 suite (chat basic x3, SSE x2, message shapes x3, json mode x2, tool passthrough x2, param boundaries x5, max_tokens x2, usage fields x2, idempotency x3, vision, Responses API); scoring + assurance mapping; redacted evidence + reproducible curl; SQLite history; JSON bundles; CLI with `run` / `history`.

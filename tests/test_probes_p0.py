@@ -12,6 +12,73 @@ async def test_echo_passes_with_valid_key(ctx):
     assert result.successes == 1
 
 
+async def test_echo_passes_when_reasoning_model_consumes_budget(ctx, fake_server):
+    """Reasoning models (e.g. deepseek-v4-flash) return empty content and put
+    the thinking in reasoning_content — that is still 'alive' (§10.1)."""
+
+    def reasoning_choices(payload, n):
+        return [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "We need to reply exactly with PONG-…",
+                },
+                "finish_reason": "length",
+            }
+        ]
+
+    original = fake_server._choices
+    fake_server._choices = reasoning_choices
+    try:
+        result = await EchoProbe().run(ctx)
+    finally:
+        fake_server._choices = original
+    assert result.verdict == Verdict.PASS
+    assert result.successes == 1
+
+
+async def test_echo_fails_when_200_but_entirely_empty(ctx, fake_server):
+    """A 200 with neither content nor reasoning_content is not alive."""
+
+    def empty_choices(payload, n):
+        return [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "stop"}]
+
+    original = fake_server._choices
+    fake_server._choices = empty_choices
+    try:
+        result = await EchoProbe().run(ctx)
+    finally:
+        fake_server._choices = original
+    assert result.verdict == Verdict.FAIL
+    assert result.successes == 0
+
+
+async def test_echo_accepts_openai_text_part_content(ctx, fake_server):
+    def text_part_choices(payload, n):
+        token = payload["messages"][0]["content"].rsplit(": ", 1)[-1]
+        return [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": token}],
+                },
+                "finish_reason": "stop",
+            }
+        ]
+
+    original = fake_server._choices
+    fake_server._choices = text_part_choices
+    try:
+        result = await EchoProbe().run(ctx)
+    finally:
+        fake_server._choices = original
+    assert result.verdict == Verdict.PASS
+    assert any("nonce echo verified" in note for note in result.notes)
+
+
 async def test_echo_fails_with_bad_key(ctx, fake_server):
     ctx.api_key = "sk-wrong-key-000000000000000"
     result = await EchoProbe().run(ctx)

@@ -15,9 +15,10 @@ from typing import Any
 
 _KEY = re.compile(r"(sk-[A-Za-z0-9_-]{4,})")
 _BEARER = re.compile(r"(Bearer\s+)([A-Za-z0-9._-]{8,})")
+_URL = re.compile(r"https?://[^\s\"'<>]+")
 # Custom auth header names: x-api-key, api-key, access-token, authorization, ...
 _SENSITIVE_HEADER = re.compile(
-    r"^(?:x[_-]?)?(?:api[_-]?key|api[_-]?token|access[_-]?token|auth(?:orization)?(?:[_-]token|[_-]key)?|token)$",
+    r"^(?:(?:x[_-]?)?(?:api[_-]?key|api[_-]?token|access[_-]?token|auth(?:orization)?(?:[_-]token|[_-]key)?|token)|proxy[_-]?auth(?:orization)?(?:[_-](?:token|key))?)$",
     re.IGNORECASE,
 )
 # Sensitive URL query parameter names: api_key, key, token, access_token, ...
@@ -28,8 +29,16 @@ _SENSITIVE_PARAM = re.compile(
 
 _REDACTED = "$SUPGATE_KEY"
 
+# httpx transport headers that curl manages itself or that fingerprint the
+# client. Skipped in the reproducible curl so replays are clean and do not
+# leak ``python-httpx/...`` (build plan §10.1 self-check). ``content-type`` is
+# deliberately kept: curl's ``-d`` default differs from ``application/json``.
+_CURL_SKIP_HEADERS = frozenset(
+    {"host", "content-length", "accept-encoding", "connection", "user-agent"}
+)
 
-def redact_secrets(text: str) -> str:
+
+def redact_secrets(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
     """Redact sk- keys and bearer tokens, keeping a recognizable stub.
 
     ``sk-abc...WXYZ`` becomes ``sk-abc****WXYZ`` (plan: ``sk_l****5765`` style).
@@ -48,26 +57,42 @@ def redact_secrets(text: str) -> str:
             return m.group(1) + tok[:4] + "****"
         return m.group(1) + tok[:4] + "****" + tok[-4:]
 
+    for secret in sorted({value for value in extra_secrets if len(value) >= 4}, key=len, reverse=True):
+        text = text.replace(secret, _REDACTED)
     return _KEY.sub(_key_repl, _BEARER.sub(_bearer_repl, text))
 
 
-def redact_payload(payload: Any) -> Any:
+def redact_payload(payload: Any, extra_secrets: tuple[str, ...] = ()) -> Any:
     """Recursively redact string values inside a JSON payload (req or resp)."""
 
     if isinstance(payload, str):
-        return redact_secrets(payload)
+        return redact_text(payload, extra_secrets)
     if isinstance(payload, list):
-        return [redact_payload(item) for item in payload]
+        return [redact_payload(item, extra_secrets) for item in payload]
     if isinstance(payload, dict):
-        return {k: redact_payload(v) for k, v in payload.items()}
+        redacted: dict[Any, Any] = {}
+        for key, value in payload.items():
+            name = str(key)
+            if _SENSITIVE_HEADER.fullmatch(name) or _SENSITIVE_PARAM.fullmatch(name):
+                redacted[key] = _REDACTED
+            else:
+                redacted[key] = redact_payload(value, extra_secrets)
+        return redacted
     return payload
 
 
-def redact_url(url: str) -> str:
+def redact_text(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
+    """Redact exact known secrets, key patterns, and sensitive URL values in text."""
+
+    text = redact_secrets(text, extra_secrets)
+    return _URL.sub(lambda match: redact_url(match.group(0), extra_secrets), text)
+
+
+def redact_url(url: str, extra_secrets: tuple[str, ...] = ()) -> str:
     """Redact sensitive query-parameter values and any embedded key/token."""
 
     if "?" not in url:
-        return redact_secrets(url)
+        return redact_secrets(url, extra_secrets)
     base, _, query = url.partition("?")
     pairs: list[str] = []
     for pair in query.split("&"):
@@ -77,8 +102,8 @@ def redact_url(url: str) -> str:
         if sep and _SENSITIVE_PARAM.fullmatch(name):
             pairs.append(f"{name}={_REDACTED}")
         else:
-            pairs.append(redact_secrets(pair))
-    return f"{redact_secrets(base)}?{'&'.join(pairs)}"
+            pairs.append(redact_secrets(pair, extra_secrets))
+    return f"{redact_secrets(base, extra_secrets)}?{'&'.join(pairs)}"
 
 
 def redact_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -91,7 +116,7 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
         elif _SENSITIVE_HEADER.fullmatch(k):
             out[k] = _REDACTED
         elif isinstance(out[k], str):
-            out[k] = redact_secrets(out[k])
+            out[k] = redact_text(out[k])
     return out
 
 
@@ -105,6 +130,8 @@ def build_curl(
 
     parts = [f"curl -sS -X {method} '{redact_url(url)}'"]
     for key, value in (headers or {}).items():
+        if key.lower() in _CURL_SKIP_HEADERS:
+            continue
         if key.lower() == "authorization":
             parts.append("-H 'Authorization: Bearer $SUPGATE_KEY'")
         elif _SENSITIVE_HEADER.fullmatch(key):
@@ -152,20 +179,21 @@ class EvidenceWriter:
 
         self._counter += 1
         name = f"{probe_id}_{self._counter:03d}.json"
-        safe_curl = redact_secrets(curl)
+        secrets = _request_secrets(request_headers or {})
+        safe_curl = redact_text(curl, secrets)
         doc = {
             "probe": probe_id,
             "request": {
                 "method": method,
-                "url": redact_url(url),
+                "url": redact_url(url, secrets),
                 "headers": redact_headers(request_headers or {}),
-                "body": redact_payload(request_body),
+                "body": redact_payload(request_body, secrets),
                 "curl": safe_curl,
             },
             "response": {
                 "status": status,
-                "headers": redact_headers(response_headers or {}),
-                "body": redact_payload(response_body),
+                "headers": redact_payload(redact_headers(response_headers or {}), secrets),
+                "body": redact_payload(response_body, secrets),
             },
             "captured_at": datetime.now(UTC).isoformat(),
         }
@@ -174,3 +202,15 @@ class EvidenceWriter:
         self._refs.setdefault(probe_id, []).append(ref)
         self._curls.setdefault(probe_id, []).append(safe_curl)
         return ref
+
+
+def _request_secrets(headers: dict[str, str]) -> tuple[str, ...]:
+    secrets: list[str] = []
+    for name, value in headers.items():
+        if not isinstance(value, str):
+            continue
+        if name.lower() == "authorization" and value.lower().startswith("bearer "):
+            secrets.append(value[7:].strip())
+        elif _SENSITIVE_HEADER.fullmatch(name):
+            secrets.append(value)
+    return tuple(secrets)

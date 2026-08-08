@@ -8,3 +8,8 @@ runs/
 *.egg-info/
 build/
 dist/
+.coverage
+.kilo/
+baselines/*.json
+.opencode/
+opencode.json

@@ -400,13 +400,16 @@ A small, explicit set of tests needs official paid accounts. They are kept out
 of the default suite and out of CI, grouped under `tests/live/` and tagged
 `official`.
 
-Required env (see build plan section 14 open decision 1):
+Each live invocation supplies an operator-chosen key-env name and explicit
+endpoint. Example names only:
 
 | Env var | Purpose |
 | --- | --- |
 | `SUPGATE_OPENAI_OFFICIAL_KEY` | Record/validate OpenAI baseline fingerprints |
 | `SUPGATE_ANTHROPIC_OFFICIAL_KEY` | Record/validate Anthropic baseline fingerprints |
-| `SUPGATE_OFFICIAL_BASE_URL` | Official account base URL |
+
+`SUPGATE_OFFICIAL_BASE_URL` is not used. Pass the official base URL through
+`--endpoint` on every `baseline record` invocation.
 
 Which tests:
 

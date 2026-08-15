@@ -18,14 +18,49 @@ Date: 2026-08-08
 ## Acceptance status
 
 - Offline L0/L2 fixtures: required S0-S4 positive, boundary, retry, transport,
-  false-positive, and redaction cases pass (`617 passed`).
+  false-positive, and redaction cases pass in the current working tree.
+- P1 operator tooling is implemented and offline-verified in the current
+  working tree: progress/final summaries, baseline planning and budget cap,
+  normalized invocation/dependency metadata, JSON and detailed history output,
+  timeout overrides/no-baseline warning, and default `p0.echo` fail-fast with
+  opt-in `--continue-forensics`.
 - Packaging: manifest is force-included in the wheel; package, harness, and
   manifest versions are aligned at `0.2.0` / schema 2 / manifest 3. The sdist
   excludes local keys, runs, baselines, coverage, and workspace tooling.
 - Official OpenAI and Anthropic baseline capture: blocked until dedicated
   operator keys from OD-01 are available. The CLI path is fixture-verified.
+- **Stage 1 controlled adhoc run EXECUTED 2026-08-15** against the
+  operator-approved OpenCode Zen endpoint (`opencode.ai/zen/go/v1`,
+  `deepseek-v4-flash`): exit 0, overall 57.2, assurance C, pass=11 warn=5
+  fail=5 skip=16, cost $0.39, redaction clean (bundle/evidence/SQLite).
+  Bundle `runs/operator-adhoc/SUP-20260815-908C.json`. Stage 2 (official
+  OpenAI/Anthropic baselines) and Stage 3 (full 37-probe run) remain
+  OD-01/operator-gated.
+- **Stage 3 full-mode shakedown EXECUTED 2026-08-15** (Kyo-approved ahead of
+  Stages 1-2 acceptance; no official baseline): exit 0, overall 50.3,
+  assurance C, pass=13 warn=6 fail=9 skip=9, cost $3.18 ($25 cap). D2 three
+  bands 100% goodput; `d2.needle_recall` FAIL (silent context truncation in
+  an HTTP 200); D8 tools.auto/stream pass, structured_strict/multiturn/
+  parallel fail. Bundle `runs/operator-full/SUP-20260815-3116.json`. Formal
+  Stage 3 acceptance remains gated on OD-01 official baselines.
+- **Stage 1 vs official the supplier gateway EXECUTED 2026-08-15**
+  (`api.supplier.example/v1`, `gpt-5.4`, rotating test key): exit 0, overall
+  **82.0**, assurance C, identity evidence **81.2**, pass=16 warn=5 fail=1
+  skip=15, cost $0.36, redaction clean. Only `d6.json_mode` failed. Bundle
+  `runs/operator-supplier-adhoc/SUP-20260815-2E08.json`. Cleanest supplier
+  surface tested to date (zen: 57.2).
+- **Stage 2 baseline record vs supplier: NOT RECORDED** — planner dry-run OK
+  ($0.04, billing omitted for `gpt-5.4`), recording run blocked by key
+  rotation (401). No record written; equivalent official-surface evidence in
+  the Stage 1 supplier bundle. A record needs a fresh key (~30s), cannot be
+  fabricated. supplier full-mode attempt also aborted mid-run by the same
+  rotation (partial evidence, no bundle) — rerun pending a fresh key.
 - DPS live run: blocked until the DPS evaluation key and approved target are
   provided. No paid or supplier endpoint was contacted during offline QA.
+- Official OpenAI/Anthropic baselines, the DPS live run, and live veto
+  validation remain OD-01/operator-gated. OD-01 remains owned by Rizky (budget
+  line: DPS Cloud); OD-03/04/05 and their existing owners remain open. Later
+  live milestones remain subject to those operator and decision gates.
 
 ## Carry-over
 
@@ -67,6 +102,7 @@ Date: 2026-08-08
 
 ## Rollback
 
-The committed M1 fallback remains commit `41eeb6f`. M2 is currently an
-uncommitted working-tree build; no automatic rollback, commit, or tag was
-performed. Ship/ship-minus/hold remains the owner's decision.
+The committed M1 fallback remains commit `41eeb6f`. M2 and the P1 operator
+tooling are currently an uncommitted working-tree build, not merged or
+released; no automatic rollback, commit, or tag was performed.
+Ship/ship-minus/hold remains the owner's decision.

@@ -754,3 +754,115 @@ async def test_custom_probe_sees_none_without_baseline(
     )
     probe = next(p for p in bundle.probes if p.probe_id == "test.baseline_aware")
     assert probe.notes == ["selected_baseline=none"]
+
+
+# --- Wave 1 progress + p0.echo fast-stop -----------------------------------
+
+
+async def test_echo_fail_fast_stops_all_remaining_probes_and_requests(
+    orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path
+):
+    events: list[tuple[int, int, ProbeResult]] = []
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key="sk-wrong",
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="full",
+        out_dir=tmp_path,
+        on_probe_complete=lambda completed, total, result: events.append(
+            (completed, total, result)
+        ),
+    )
+
+    assert len(fake_server.requests_log) == 1
+    assert fake_server.requests_log[0]["path"].endswith("/chat/completions")
+    assert len(events) == len(bundle.probes)
+    assert [completed for completed, _, _ in events] == list(range(1, len(events) + 1))
+    assert {total for _, total, _ in events} == {len(bundle.probes)}
+    assert [result.probe_id for _, _, result in events] == [
+        result.probe_id for result in bundle.probes
+    ]
+
+    echo = bundle.probes[0]
+    assert echo.probe_id == "p0.echo"
+    assert echo.verdict == Verdict.FAIL
+    for result in bundle.probes[1:]:
+        assert result.verdict == Verdict.SKIP
+        assert result.attempts == 0
+        assert result.weight > 0
+        assert result.evidence_ref == []
+        assert result.curl is None
+        note = " ".join(result.notes)
+        assert "fast-stopped" in note
+        assert "p0.echo" in note
+
+
+async def test_echo_warn_does_not_fast_stop(
+    orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path, monkeypatch
+):
+    async def no_sleep(_: float) -> None:
+        pass
+
+    monkeypatch.setattr("supgate.registry.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("supgate.probes.base.asyncio.sleep", no_sleep)
+    fake_server.force_429 = True
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key=fake_server.valid_key,
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="full",
+        out_dir=tmp_path,
+    )
+
+    echo = next(result for result in bundle.probes if result.probe_id == "p0.echo")
+    assert echo.verdict == Verdict.WARN
+    assert len(fake_server.requests_log) > 2
+    assert not any("fast-stopped" in note for result in bundle.probes for note in result.notes)
+
+
+async def test_continue_forensics_preserves_post_echo_fail_execution(
+    orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path
+):
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key="sk-wrong",
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="full",
+        out_dir=tmp_path,
+        continue_forensics=True,
+    )
+
+    assert len(fake_server.requests_log) > 1
+    assert not any("fast-stopped" in note for result in bundle.probes for note in result.notes)
+    assert any(
+        result.probe_id != "p0.echo" and result.attempts > 0 for result in bundle.probes
+    )
+
+
+async def test_probe_completion_callback_exception_is_isolated(
+    orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path
+):
+    calls = 0
+
+    async def broken_callback(completed: int, total: int, result: ProbeResult) -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError(f"observer failed at {completed}/{total}: {result.probe_id}")
+
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key="sk-wrong",
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="full",
+        out_dir=tmp_path,
+        on_probe_complete=broken_callback,
+    )
+
+    assert calls == len(bundle.probes)
+    assert bundle.probes[0].probe_id == "p0.echo"
+    assert bundle.probes[0].verdict == Verdict.FAIL
+    assert (tmp_path / f"{bundle.run_id}.json").exists()

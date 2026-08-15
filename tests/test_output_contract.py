@@ -9,7 +9,14 @@ from pathlib import Path
 import pytest
 
 from supgate.baselines import BaselineRecord, BaselineStore, BaselineSurface
-from supgate.models import Domain, ProbeResult, RunBundle, Verdict
+from supgate.models import (
+    BaselineReference,
+    CostSummary,
+    Domain,
+    ProbeResult,
+    RunBundle,
+    Verdict,
+)
 from supgate.orchestrator import Orchestrator, summary
 
 
@@ -69,6 +76,54 @@ def test_summary_tolerates_missing_overall():
     text = summary(bundle)
     assert "overall=n/a" in text
     assert "assurance=C" in text
+    assert "baseline=none" in text
+    assert "inconclusive=false" in text
+    assert "reason=none" in text
+    assert "estimated_usd=$0.000000" in text
+    assert "budget_blocked=0" in text
+    assert "failed_probe_ids=none" in text
+
+
+def test_summary_includes_baseline_inconclusive_cost_budget_and_failures():
+    bundle = RunBundle(
+        run_id="SUP-X",
+        endpoint="https://api.example/v1",
+        claimed_models=["gpt-4o"],
+        mode="full",
+        started_at="2026-08-06T00:00:00+00:00",
+        overall_score=42.5,
+        baseline=BaselineReference(baseline_id="BL-OPENAI-GPT4O-0001"),
+        inconclusive=True,
+        inconclusive_reason="p0 models unavailable",
+        cost=CostSummary(estimated_usd=1.23456789, blocked=True),
+        probes=[
+            ProbeResult(
+                probe_id="p0.models",
+                domain=Domain.PLATFORM,
+                verdict=Verdict.FAIL,
+                score=0.0,
+                attempts=1,
+            ),
+            ProbeResult(
+                probe_id="d4.rotation",
+                domain=Domain.D4,
+                verdict=Verdict.WARN,
+                score=0.0,
+                attempts=0,
+                notes=["budget-blocked: per-run cost cap exhausted"],
+            ),
+        ],
+    )
+
+    text = summary(bundle)
+    assert "overall=42.5" in text
+    assert "pass=0 warn=1 fail=1 skip=0" in text
+    assert "baseline=BL-OPENAI-GPT4O-0001" in text
+    assert "inconclusive=true" in text
+    assert "reason=p0 models unavailable" in text
+    assert "estimated_usd=$1.234568" in text
+    assert "budget_blocked=1" in text
+    assert "failed_probe_ids=p0.models" in text
 
 
 async def test_invalid_mode_is_rejected(
@@ -203,11 +258,44 @@ async def test_bundle_emits_schema_2_versions(
     assert bundle.versions["schema"] == 2
     assert isinstance(bundle.versions["schema"], int)
     assert bundle.versions["supgate"] == "0.2.0"
+    for dependency in ("python", "httpx", "pydantic", "PyYAML", "tiktoken", "typer"):
+        assert isinstance(bundle.versions[dependency], str)
+        assert bundle.versions[dependency]
 
     parsed = json.loads((tmp_path / f"{bundle.run_id}.json").read_text(encoding="utf-8"))
     assert parsed["schema"] == 2
     assert parsed["versions"]["schema"] == 2
     assert parsed["versions"]["supgate"] == "0.2.0"
+    assert parsed["versions"]["python"] == bundle.versions["python"]
+
+
+async def test_bundle_persists_normalized_invocation_without_raw_key(
+    orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path
+):
+    raw_key = fake_server.valid_key
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key=raw_key,
+        key_env="SUPGATE_KEY",
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="adhoc",
+        out_dir=tmp_path,
+        baseline_root=tmp_path / "baselines",
+        allow_family=True,
+    )
+    invocation = bundle.invocation
+    assert invocation.base_url == "https://fake.example/v1"
+    assert invocation.key_env == "SUPGATE_KEY"
+    assert invocation.models == ["gpt-4o"]
+    assert invocation.mode == "adhoc"
+    assert invocation.out == str(tmp_path)
+    assert invocation.baseline_dir == str(tmp_path / "baselines")
+    assert invocation.allow_family_baseline is True
+    assert invocation.timeout_s == orchestrator.timeout_s
+    serialized = (tmp_path / f"{bundle.run_id}.json").read_text(encoding="utf-8")
+    assert raw_key not in serialized
+    assert "sys.argv" not in serialized
 
 
 async def test_cost_summary_serialized_shape_is_exact(

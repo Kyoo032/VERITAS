@@ -4,13 +4,14 @@ semaphore, budget enforcement, bundle assembly."""
 from __future__ import annotations
 
 import asyncio
+import inspect
 import secrets
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
-from supgate import __version__
 from supgate.baselines import (
     BaselineError,
     BaselineMatch,
@@ -27,6 +28,7 @@ from supgate.models import (
     BudgetTracker,
     CalibrationSnapshot,
     Domain,
+    InvocationConfig,
     ProbeResult,
     RunBundle,
     SurfaceMap,
@@ -41,10 +43,12 @@ from supgate.probes.d4_fingerprint import (
     provider_of_family,
 )
 from supgate.registry import load_manifest_version, load_probes
+from supgate.runtime import runtime_versions
 from supgate.scoring import assurance, overall_score, score_domains
 from supgate.tokenizers import DEFAULT_MODEL
 
 P0_IDS = {"p0.echo", "p0.models", "p0.error_contract"}
+ProbeCompletionCallback = Callable[[int, int, ProbeResult], Awaitable[None] | None]
 
 
 class Orchestrator:
@@ -58,6 +62,8 @@ class Orchestrator:
     ) -> None:
         if concurrency < 1 or concurrency > 50:
             raise ValueError("concurrency must be within 1..50 (build plan §5)")
+        if timeout_s <= 0:
+            raise ValueError("timeout_s must be positive")
         self.concurrency = concurrency
         self.timeout_s = timeout_s
         self.budget_usd = budget_usd
@@ -80,6 +86,9 @@ class Orchestrator:
         baseline_id: str | None = None,
         allow_family: bool = False,
         allow_coarse: bool = False,
+        on_probe_complete: ProbeCompletionCallback | None = None,
+        continue_forensics: bool = False,
+        invocation: InvocationConfig | dict[str, object] | None = None,
     ) -> RunBundle:
         if mode not in {"adhoc", "full"}:
             raise ValueError(f"invalid mode {mode!r}: expected 'adhoc' or 'full' (build plan §12)")
@@ -125,6 +134,23 @@ class Orchestrator:
             p0_verdicts=p0_verdicts,
         )
         results: list[ProbeResult] = []
+        total_probes = len(probes)
+        completed_probes = 0
+
+        async def notify(result: ProbeResult) -> None:
+            """Publish one completion without letting observers affect the run."""
+
+            nonlocal completed_probes
+            completed_probes += 1
+            if on_probe_complete is not None:
+                try:
+                    callback_result = on_probe_complete(
+                        completed_probes, total_probes, result
+                    )
+                    if inspect.isawaitable(callback_result):
+                        await callback_result
+                except Exception:  # noqa: BLE001 - progress observers are non-critical
+                    pass
 
         async def execute(probe) -> ProbeResult:
             try:
@@ -133,18 +159,40 @@ class Orchestrator:
                 if sla is not None and getattr(probe, "apply_sla", None) is not None:
                     probe.apply_sla(sla)
                 async with semaphore:
-                    return await self._run_probe(probe, ctx, mode, budget)
+                    result = await self._run_probe(probe, ctx, mode, budget)
             except Exception as exc:  # noqa: BLE001 - setup hooks are part of the probe boundary
-                return _probe_error_result(probe, ctx, exc)
+                result = _probe_error_result(probe, ctx, exc)
+            await notify(result)
+            return result
 
         try:
             p0_probes = [probe for probe in probes if probe.id in P0_IDS]
             remaining = [probe for probe in probes if probe.id not in P0_IDS]
-            for probe in p0_probes:
+            fast_stopped = False
+            for index, probe in enumerate(p0_probes):
                 result = await execute(probe)
                 p0_verdicts[probe.id] = result.verdict.value
                 results.append(result)
-            results.extend(await asyncio.gather(*(execute(probe) for probe in remaining)))
+                if (
+                    probe.id == "p0.echo"
+                    and result.verdict == Verdict.FAIL
+                    and not continue_forensics
+                ):
+                    # p0.echo established that the endpoint is dead.  Preserve
+                    # the manifest contract by emitting one explicit result for
+                    # every unstarted probe, but issue no more endpoint calls.
+                    for unstarted in [*p0_probes[index + 1 :], *remaining]:
+                        skipped = _skip_result(
+                            unstarted,
+                            "fast-stopped: p0.echo is fail, not pass; "
+                            "no further endpoint requests",
+                        )
+                        results.append(skipped)
+                        await notify(skipped)
+                    fast_stopped = True
+                    break
+            if not fast_stopped:
+                results.extend(await asyncio.gather(*(execute(probe) for probe in remaining)))
         finally:
             await client.aclose()
 
@@ -155,6 +203,24 @@ class Orchestrator:
         inconclusive, inconclusive_reason = _inconclusive(results)
         authenticity = _authenticity(results)
         assurance_verdict = assurance(overall, domain_scores, vetoes, mode=mode)
+        effective_budget = budget_usd if budget_usd is not None else self.budget_usd
+        invocation_config = InvocationConfig.model_validate(invocation) if invocation is not None else InvocationConfig(
+            base_url=endpoint,
+            key_env=key_env,
+            models=list(claimed_models),
+            mode=mode,
+            out=str(out_dir),
+            sla=sla or SLA(),
+            budget_usd=effective_budget,
+            concurrency=self.concurrency,
+            baseline_dir=str(baseline_root) if baseline_root is not None else None,
+            baseline_id=baseline_id,
+            automatic_baseline=baseline_id is None,
+            allow_family_baseline=allow_family,
+            allow_coarse_baseline=allow_coarse,
+            timeout_s=self.timeout_s,
+            continue_forensics=continue_forensics,
+        )
         bundle = RunBundle(
             run_id=run_id,
             endpoint=endpoint,
@@ -166,11 +232,12 @@ class Orchestrator:
             finished_at=_now(),
             schema=2,
             versions={
-                "supgate": __version__,
+                **runtime_versions(),
                 "manifest": load_manifest_version(manifest_path),
                 "baselines": selected.baseline_id if selected else "none",
                 "schema": 2,
             },
+            invocation=invocation_config,
             sla=sla or SLA(),
             cost=budget.summary(),
             overall_score=overall,
@@ -714,8 +781,19 @@ def summary(bundle: RunBundle) -> str:
     for probe in bundle.probes:
         counts[probe.verdict] += 1
     overall = f"{bundle.overall_score:.1f}" if bundle.overall_score is not None else "n/a"
+    baseline_id = bundle.baseline.baseline_id if bundle.baseline is not None else "none"
+    reason = bundle.inconclusive_reason or "none"
+    budget_blocked = sum(
+        any("budget-blocked" in note for note in probe.notes) for probe in bundle.probes
+    )
+    failed_ids = [probe.probe_id for probe in bundle.probes if probe.verdict == Verdict.FAIL]
+    failed = ",".join(failed_ids) if failed_ids else "none"
     return (
         f"run {bundle.run_id}  endpoint={bundle.endpoint}  mode={bundle.mode}\n"
         f"overall={overall}  assurance={bundle.assurance.level.value}  "
-        f"pass={counts[Verdict.PASS]} warn={counts[Verdict.WARN]} fail={counts[Verdict.FAIL]} skip={counts[Verdict.SKIP]}"
+        f"pass={counts[Verdict.PASS]} warn={counts[Verdict.WARN]} "
+        f"fail={counts[Verdict.FAIL]} skip={counts[Verdict.SKIP]}\n"
+        f"baseline={baseline_id}  inconclusive={str(bundle.inconclusive).lower()}  "
+        f"reason={reason}  estimated_usd=${bundle.cost.estimated_usd:.6f}  "
+        f"budget_blocked={budget_blocked}  failed_probe_ids={failed}"
     )

@@ -1,0 +1,76 @@
+{
+  "probe": "d4.self_report",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Describe in one sentence which hosting platform or provider API is serving this request."
+        }
+      ],
+      "max_tokens": 48,
+      "temperature": 0
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Describe in one sentence which hosting platform or provider API is serving this request.\"}],\"max_tokens\":48,\"temperature\":0}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "335",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:02:35 GMT",
+      "expires": "0",
+      "openai-processing-ms": "9079",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "b8bed07f-40a2-4c54-b5ce-05a2fdcca30b",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151102264635921488268d9d6T2XDKA6m",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_a9411d10285248f9",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-247dc9b9cf864d06b9ed17c2",
+      "object": "chat.completion",
+      "created": 1786791747,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "This request is being served by OpenAI\u2019s API infrastructure."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4697,
+        "completion_tokens": 22,
+        "total_tokens": 4719
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:02:47.514970+00:00"
+}

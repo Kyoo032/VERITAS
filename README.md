@@ -81,6 +81,19 @@ supgate run `
 | `--sla` | defaults | Client SLA, e.g. `--sla ttft=5,tpot=0.5,e2e=60` |
 | `--budget-usd` | unlimited | Per-run cost cap; blocks further probes when hit |
 | `--concurrency` | `10` | Max concurrent probes, 1..50 |
+| `--timeout-s` | `60` | Positive HTTP timeout in seconds |
+
+Operator examples (keys remain env-only):
+
+```powershell
+# Run: progress + final summary; add --json for one machine-readable summary.
+supgate run --base-url $Endpoint --key-env SUPGATE_KEY --model gpt-4o `
+  --budget-usd 5 --timeout-s 30 --json
+
+# Default p0.echo failure fast-stops endpoint work; opt into full collection:
+supgate run --base-url $Endpoint --key-env SUPGATE_KEY --model gpt-4o `
+  --budget-usd 5 --timeout-s 30 --continue-forensics
+```
 
 ## Official baselines
 
@@ -90,8 +103,11 @@ and endpoint are explicit every run — no shared defaults, no `SUPGATE_OFFICIAL
 ```powershell
 $env:MY_OFFICIAL_KEY = "sk-..."                       # fresh per session
 supgate baseline record --vendor openai --model gpt-4o `
+  --endpoint https://api.openai.com/v1 --key-env MY_OFFICIAL_KEY `
+  --budget-usd 5 --dry-run --json
+supgate baseline record --vendor openai --model gpt-4o `
   --endpoint https://api.openai.com/v1 `
-  --key-env MY_OFFICIAL_KEY --confirm-official
+  --key-env MY_OFFICIAL_KEY --budget-usd 5 --confirm-official
 supgate baseline list
 supgate baseline show BL-OPENAI-GPT-4O-0001
 supgate baseline select --model gpt-4o
@@ -119,6 +135,7 @@ History lives in `~/.supgate/history.db`:
 
 ```powershell
 supgate history --endpoint https://api.supplier.example/v1 --limit 10
+supgate history --run-id SUP-YYYYMMDD-XXXX --json
 ```
 
 ## Exit codes
@@ -135,7 +152,7 @@ failing probes still exits `0`.
 ## Test and lint
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q      # 617 tests, fully offline
+.\.venv\Scripts\python.exe -m pytest -q      # fully offline
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 

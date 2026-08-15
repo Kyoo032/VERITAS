@@ -1,0 +1,32 @@
+{
+  "probe": "d6.param_boundaries",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Say hello in one short sentence."
+        }
+      ],
+      "temperature": 0,
+      "stop": [
+        "STOP"
+      ]
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}],\"temperature\":0,\"stop\":[\"STOP\"]}'"
+  },
+  "response": {
+    "status": 0,
+    "headers": {},
+    "body": "transport error: RemoteProtocolError: Server disconnected without sending a response."
+  },
+  "captured_at": "2026-08-15T11:07:32.399242+00:00"
+}

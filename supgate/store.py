@@ -6,7 +6,9 @@ is fully additive over the M1 store: ``runs`` gains ``schema_version`` /
 ``metrics_json`` / ``notes_json``, and the ``baselines`` / ``vetoes`` tables
 are created. Version 3 adds the one-way key identity columns
 ``key_env`` / ``key_fingerprint`` to ``runs`` and ``baselines`` (the raw API
-key is never stored — only its SHA-256 fingerprint). Existing databases
+key is never stored — only its SHA-256 fingerprint). Version 4 adds run finish
+time plus the already-redacted invocation and runtime/dependency version JSON.
+Existing databases
 migrate in place with ``ALTER TABLE ADD COLUMN`` and ``CREATE TABLE IF NOT
 EXISTS`` — user data is never dropped or recreated, and re-running the
 migration is a no-op.
@@ -21,7 +23,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from supgate.evidence import redact_payload, redact_text
 from supgate.models import RunBundle
@@ -29,7 +31,7 @@ from supgate.models import RunBundle
 if TYPE_CHECKING:
     from supgate.baselines import BaselineRecord
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _RUNS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("run_id", "TEXT PRIMARY KEY"),
@@ -45,6 +47,9 @@ _RUNS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("calibration_json", "TEXT"),
     ("key_env", "TEXT"),
     ("key_fingerprint", "TEXT"),
+    ("finished_at", "TEXT"),
+    ("invocation_json", "TEXT"),
+    ("versions_json", "TEXT"),
 )
 
 _PROBE_RESULTS_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -109,8 +114,9 @@ class RunStore:
                 INSERT INTO runs (
                     run_id, endpoint, model, mode, started_at, overall, assurance,
                     bundle_path, schema_version, baseline_id, calibration_json,
-                    key_env, key_fingerprint
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    key_env, key_fingerprint, finished_at, invocation_json,
+                    versions_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     bundle.run_id,
@@ -126,6 +132,9 @@ class RunStore:
                     calibration_json,
                     bundle.key_env,
                     bundle.key_fingerprint,
+                    bundle.finished_at,
+                    json.dumps(bundle.invocation.model_dump(mode="json"), default=str),
+                    json.dumps(bundle.versions, default=str),
                 ),
             )
             conn.executemany(
@@ -195,6 +204,65 @@ class RunStore:
             rows = conn.execute(query, params + (limit,)).fetchall()
         return [dict(zip(_HISTORY_COLUMNS, row, strict=True)) for row in rows]
 
+    def inspect_run(self, run_id: str) -> dict[str, Any] | None:
+        """Return decoded run, probe, and veto details for one run id."""
+
+        run_columns = (
+            *_HISTORY_COLUMNS,
+            "schema_version",
+            "baseline_id",
+            "key_env",
+            "key_fingerprint",
+            "finished_at",
+            "invocation_json",
+            "versions_json",
+            "calibration_json",
+        )
+        probe_columns = (
+            "probe_id",
+            "verdict",
+            "score",
+            "attempts",
+            "successes",
+            "evidence_path",
+            "metrics_json",
+            "notes_json",
+        )
+        with self._connect() as conn:
+            run_row = conn.execute(
+                f"SELECT {', '.join(run_columns)} FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if run_row is None:
+                return None
+            probe_rows = conn.execute(
+                f"SELECT {', '.join(probe_columns)} FROM probe_results "
+                "WHERE run_id = ? ORDER BY rowid",
+                (run_id,),
+            ).fetchall()
+            veto_rows = conn.execute(
+                "SELECT code, detail FROM vetoes WHERE run_id = ? ORDER BY rowid",
+                (run_id,),
+            ).fetchall()
+
+        raw = dict(zip(run_columns, run_row, strict=True))
+        detail = {key: raw[key] for key in run_columns if not key.endswith("_json")}
+        detail["invocation"] = _decode_json(raw["invocation_json"], {})
+        detail["versions"] = _decode_json(raw["versions_json"], {})
+        detail["calibration"] = _decode_json(raw["calibration_json"], {})
+        detail["probes"] = []
+        for row in probe_rows:
+            probe = dict(zip(probe_columns, row, strict=True))
+            evidence_path = probe.pop("evidence_path")
+            probe["evidence_ref"] = evidence_path.split(",") if evidence_path else []
+            probe["metrics"] = _decode_json(probe.pop("metrics_json"), {})
+            probe["notes"] = _decode_json(probe.pop("notes_json"), [])
+            detail["probes"].append(probe)
+        detail["vetoes"] = [
+            dict(zip(("code", "detail"), row, strict=True)) for row in veto_rows
+        ]
+        return detail
+
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """Bring the store to :data:`SCHEMA_VERSION` (docs/08 §11, §18 MR3).
@@ -221,6 +289,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "runs", "calibration_json", "TEXT")
     _add_column(conn, "runs", "key_env", "TEXT")
     _add_column(conn, "runs", "key_fingerprint", "TEXT")
+    _add_column(conn, "runs", "finished_at", "TEXT")
+    _add_column(conn, "runs", "invocation_json", "TEXT")
+    _add_column(conn, "runs", "versions_json", "TEXT")
     _add_column(conn, "probe_results", "metrics_json", "TEXT")
     _add_column(conn, "probe_results", "notes_json", "TEXT")
     _add_column(conn, "baselines", "key_env", "TEXT")
@@ -236,6 +307,18 @@ def _add_column(conn: sqlite3.Connection, table: str, name: str, ddl: str) -> No
     existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if name not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
+
+def _decode_json(raw: str | None, default: Any) -> Any:
+    """Decode one legacy-compatible JSON column with a type-safe default."""
+
+    if not raw:
+        return default.copy()
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default.copy()
+    return decoded if isinstance(decoded, type(default)) else default.copy()
 
 
 def _bundle_schema_version(bundle: RunBundle) -> int:

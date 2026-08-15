@@ -108,6 +108,7 @@ def run(
             orchestrator.run(
                 endpoint=base_url,
                 api_key=api_key,
+                key_env=key_env,
                 claimed_models=models,
                 manifest_path=DEFAULT_MANIFEST,
                 mode=mode,
@@ -197,6 +198,7 @@ def baseline_record(
                 vendor=vendor_key,
                 model=model,
                 api_key=api_key,
+                key_env=key_env,
                 endpoint=endpoint,
                 out=out,
                 label=label,

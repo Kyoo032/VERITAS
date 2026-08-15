@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from supgate.baselines import BaselineError, BaselineRecord, BaselineStore, BaselineSurface
+from supgate.keyid import key_fingerprint
 from supgate.models import Domain, ProbeResult, Verdict
 from supgate.orchestrator import Orchestrator, _resolve_selected_baseline, endpoint_dead
 from supgate.probes.d4_fingerprint import HeadersDiffProbe
@@ -46,6 +47,32 @@ async def test_full_run_produces_bundle(orchestrator: Orchestrator, fake_server,
     evidence_dir = tmp_path / "evidence" / bundle.run_id
     files = list(evidence_dir.glob("*.json"))
     assert len(files) >= 10, "each probe sample stores redacted evidence"
+
+
+async def test_run_records_key_identity_fingerprint(orchestrator: Orchestrator, fake_server, manifest: Path, tmp_path: Path):
+    """Bundles and evidence carry only the one-way key fingerprint, never the key."""
+    bundle = await orchestrator.run(
+        endpoint="https://fake.example/v1",
+        api_key=fake_server.valid_key,
+        key_env="TEST_KEY_ENV",
+        claimed_models=["gpt-4o"],
+        manifest_path=manifest,
+        mode="adhoc",
+        out_dir=tmp_path,
+    )
+    assert bundle.key_env == "TEST_KEY_ENV"
+    assert bundle.key_fingerprint == key_fingerprint(fake_server.valid_key)
+
+    bundle_text = (tmp_path / f"{bundle.run_id}.json").read_text(encoding="utf-8")
+    assert bundle.key_fingerprint in bundle_text
+    assert fake_server.valid_key not in bundle_text
+
+    evidence_files = list((tmp_path / "evidence" / bundle.run_id).glob("*.json"))
+    assert evidence_files
+    for path in evidence_files:
+        text = path.read_text(encoding="utf-8")
+        assert bundle.key_fingerprint in text
+        assert fake_server.valid_key not in text
 
 
 async def test_probe_exception_becomes_fail_and_bundle_is_written(

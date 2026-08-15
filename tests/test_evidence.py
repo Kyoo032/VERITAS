@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from supgate.evidence import (
@@ -142,6 +143,42 @@ def test_evidence_writer_redacts_exact_arbitrary_request_secret_from_response(tm
     text = (tmp_path / "SUP-TEST" / ref.split("/")[-1]).read_text(encoding="utf-8")
     assert secret not in text
     assert "$SUPGATE_KEY" in text
+
+
+def test_evidence_writer_records_key_fingerprint(tmp_path: Path):
+    fp = "sha256:" + "ab" * 32
+    writer = EvidenceWriter(tmp_path, "SUP-TEST", key_fingerprint=fp)
+    ref = writer.save(
+        "d6.chat.basic",
+        method="POST",
+        url="https://api.example/v1/chat/completions",
+        request_headers={"Authorization": "Bearer sk-abc1234567890"},
+        request_body={"model": "gpt-4o"},
+        status=200,
+        response_headers={"content-type": "application/json"},
+        response_body={"id": "chatcmpl-1"},
+        curl="curl -sS ...",
+    )
+    doc = json.loads((tmp_path / "SUP-TEST" / ref.split("/")[-1]).read_text(encoding="utf-8"))
+    assert doc["key_fingerprint"] == fp
+    assert "sk-abc1234567890" not in json.dumps(doc)
+
+
+def test_evidence_writer_without_fingerprint_writes_null(tmp_path: Path):
+    writer = EvidenceWriter(tmp_path, "SUP-TEST")
+    ref = writer.save(
+        "d6.chat.basic",
+        method="POST",
+        url="https://api.example/v1/chat/completions",
+        request_headers={"Authorization": "Bearer sk-abc1234567890"},
+        request_body={"model": "gpt-4o"},
+        status=200,
+        response_headers={},
+        response_body={},
+        curl="curl -sS ...",
+    )
+    doc = json.loads((tmp_path / "SUP-TEST" / ref.split("/")[-1]).read_text(encoding="utf-8"))
+    assert doc["key_fingerprint"] is None
 
 
 def test_redact_short_sk_token():

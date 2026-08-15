@@ -1,0 +1,79 @@
+{
+  "probe": "d6.chat.basic",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Say hello in exactly one short sentence."
+        }
+      ],
+      "temperature": 0,
+      "max_tokens": 32
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in exactly one short sentence.\"}],\"temperature\":0,\"max_tokens\":32}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "331",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:03:31 GMT",
+      "expires": "0",
+      "openai-processing-ms": "6561",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "8d96c1d6-ca79-4851-bc8b-9d84aa82780c",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151103252781180028268d9d62jKQCti0",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_d3035879e5aa487d",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-c565a430db9b4c0faf0d361e",
+      "object": "chat.completion",
+      "created": 1786791806,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hello there."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4690,
+        "completion_tokens": 7,
+        "total_tokens": 4697,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:03:43.810696+00:00"
+}

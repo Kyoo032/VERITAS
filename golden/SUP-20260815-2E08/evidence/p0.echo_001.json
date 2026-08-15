@@ -1,0 +1,79 @@
+{
+  "probe": "p0.echo",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Reply with exactly this token and nothing else: PONG-ed76cb76"
+        }
+      ],
+      "max_tokens": 64,
+      "temperature": 0
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly this token and nothing else: PONG-ed76cb76\"}],\"max_tokens\":64,\"temperature\":0}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "333",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:00:32 GMT",
+      "expires": "0",
+      "openai-processing-ms": "8662",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "3ecc0446-a23f-494b-9ba7-c5a666632fb1",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151100240400947898268d9d6lT0TcKdq",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_95a69c2d341b41cb",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-5c1a3088c1a14c43b0610c3f",
+      "object": "chat.completion",
+      "created": 1786791628,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "PONG-ed76cb76"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4697,
+        "completion_tokens": 10,
+        "total_tokens": 4707,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:00:44.838649+00:00"
+}

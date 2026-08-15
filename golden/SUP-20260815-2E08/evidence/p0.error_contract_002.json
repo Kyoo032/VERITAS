@@ -1,0 +1,43 @@
+{
+  "probe": "p0.error_contract",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "hi"
+        }
+      ],
+      "max_tokens": 4
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4}'"
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "content-length": "124",
+      "content-type": "application/json; charset=utf-8",
+      "date": "Sat, 15 Aug 2026 11:00:33 GMT",
+      "via": "1.1 Caddy",
+      "x-new-api-version": "39c344862",
+      "x-oneapi-request-id": "202608151100333224302148268d9d6nsnKdGgb"
+    },
+    "body": {
+      "error": {
+        "code": "",
+        "message": "Invalid token (request id: 202608151100333224302148268d9d6nsnKdGgb)",
+        "type": "new_api_error"
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:00:45.098931+00:00"
+}

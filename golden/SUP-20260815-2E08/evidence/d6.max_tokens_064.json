@@ -1,0 +1,79 @@
+{
+  "probe": "d6.max_tokens",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a long essay about birds."
+        }
+      ],
+      "temperature": 0,
+      "max_tokens": 1
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Write a long essay about birds.\"}],\"temperature\":0,\"max_tokens\":1}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "7548",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:05:29 GMT",
+      "expires": "0",
+      "openai-processing-ms": "43093",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "f881655e-1a1e-44fc-b2c1-b3a7ba9fef44",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151104460841418508268d9d6ZB0TxM7q",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_44f42f74f0144899",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-cd8a87d19a2047b18978869b",
+      "object": "chat.completion",
+      "created": 1786791903,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Birds are among the most visible forms of animal life on Earth, but their familiarity hides how extraordinary they are. They live on every continent, from the tropics to the poles, in deserts, forests, cities, farms, and open ocean. They range from the tiny bee hummingbird to the towering ostrich, and they have adapted to a remarkable spread of ecological niches. What makes birds especially compelling is that they are not just another class of animals with wings. They are living dinosaurs, descendants of theropod ancestors that survived the mass extinction at the end of the Cretaceous. Every sparrow on a fence, every heron at the edge of a marsh, every albatross over the sea is part of that deep evolutionary history.\n\nThe defining feature of birds is flight, but flight is only one expression of a broader set of adaptations. Feathers, for example, did not evolve solely for flying. They serve in insulation, camouflage, courtship displays, sensory functions, and nest-building. The feather is one of evolution\u2019s most versatile structures: lightweight, strong, and renewable. A bird can molt and replace damaged feathers rather than grow a new body part from scratch. This makes feathers both practical and elegant, a solution that combines form and function in a way few biological structures do.\n\nThe skeleton of a bird is equally specialized. Many bones are hollow or highly reduced in weight, yet the body remains rigid enough to withstand the stresses of flight. The sternum of many flying birds has a keel, which anchors the powerful muscles that drive the wings. Their respiratory system is unusually efficient, using air sacs to maintain a constant flow of oxygen-rich air through the lungs. This matters because flight is energetically expensive. Birds need a metabolism that can support sustained activity, rapid reflexes, and often long-distance migration. In many ways, the bird body is an engineered compromise between lightness, strength, and endurance.\n\nBirds also show a striking range of behavior. Some species are intensely social, forming flocks, colonies, or cooperative breeding groups. Others are solitary and territorial. Some sing complex songs to defend territory or attract mates; others use simple calls, visual gestures, or elaborate dances. The lyrebird can mimic chainsaws and camera shutters, but that novelty rests on a serious biological purpose: acoustic competition and communication. Birdsong is not just decoration. It encodes identity, reproductive fitness, species boundaries, and sometimes local dialects. In that sense, bird sound is a living record of evolution, geography, and behavior.\n\nMigration is one of the most astonishing bird behaviors. Every year, countless birds move across continents and oceans, following seasonal patterns of food availability and breeding opportunity. Arctic terns travel from pole to pole and may experience more daylight than any other animal on Earth. Shorebirds refuel in coastal stopovers, hummingbirds cross mountain corridors, and geese navigate by stars, magnetic cues, landmarks, and inherited memory. Migration is risky, energy-intensive, and highly coordinated. It depends on a network of habitats linked across huge distances. A migratory bird is not tied to one place; it is tied to a route.\n\nThat dependence makes birds powerful indicators of environmental change. When bird populations decline, it often signals broader problems: habitat loss, pesticide exposure, climate disruption, invasive species, or collapsing food webs. Because birds are mobile and relatively well-studied, they provide early warning about ecological stress. The disappearance of a familiar swallow or warbler is not just an aesthetic loss. It can indicate that an insect population has shifted, that wetlands are shrinking, or that a forest has changed enough to no longer support breeding. Birds are both participants in ecosystems and barometers of their health.\n\nPeople have always noticed birds. They appear in mythology, religion, heraldry, poetry, music, and everyday speech. They have been treated as omens, messengers, companions, pests, and models of freedom. That symbolic power comes from a real biological fact: birds move in ways humans cannot. They cross barriers, occupy the air, and migrate on schedules that seem to defy ordinary limits. The temptation to see them as almost otherworldly is understandable. Yet the more closely one studies them, the more grounded they become. They are not symbols first and organisms second. Their beauty is inseparable from anatomy, ecology, and behavior.\n\nHuman relationships with birds are mixed. We admire them, but we also reshape the landscapes they need. Agriculture, urbanization, logging, drainage, and industrial development have altered nesting sites, feeding grounds, and migratory corridors. Some birds adapt well to human environments. Pigeons, crows, gulls, and house sparrows exploit cities with impressive intelligence. Others are specialized and vulnerable, unable to survive if a particular habitat disappears. Conservation therefore requires more than admiration. It requires maintaining wetlands, grasslands, forests, reefs, and coastlines; controlling pollutants; and managing human land use with ecological function in mind.\n\nAt the same time, birds are resilient in ways that should not be underestimated. Given room, many species rebound quickly. Restored wetlands can fill with ducks and herons. Reforested areas can attract warblers, woodpeckers, and thrushes. Urban parks can become refuges for migrants. Bird conservation often produces benefits beyond birds themselves: cleaner water, healthier vegetation, more stable soils, and richer biodiversity overall. Protecting birds is rarely only about birds.\n\nThere is also a deep intellectual pleasure in observing them. Birds are accessible to almost everyone. You do not need a laboratory or expensive equipment to begin. A window, a feeder, a park bench, a trail, or a coastline can become a field site. Watching birds trains attention. One learns to notice posture, plumage, flight style, song, season, and habitat. A jay\u2019s harsh call, a hawk\u2019s circling ascent, a kingfisher\u2019s dive, a sandpiper\u2019s quick steps along the tide line, a nightjar\u2019s silent camouflage, each reveals a different strategy for living. Birdwatching is a discipline of patience and precision, but it also rewards wonder.\n\nThat wonder is not misplaced sentiment. Birds are a case study in evolution\u2019s creativity. They show how structure can be repurposed, how behavior can become complex, and how life can occupy an astonishing number of ecological roles while retaining a recognizable core. They remind us that the world is still full of movement, sound, pattern, and adaptation. To pay attention to birds is to pay attention to the living systems they depend on and the history they embody.\n\nBirds matter because they are beautiful, but that is not the whole of it. They matter because they connect air, land, water, season, and migration. They matter because they are ancient and current at once. They matter because they reveal, in a form visible to almost anyone, the long argument between life and its limits."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4393,
+        "completion_tokens": 1409,
+        "total_tokens": 5802,
+        "prompt_tokens_details": {
+          "cached_tokens": 3840
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:05:41.180956+00:00"
+}

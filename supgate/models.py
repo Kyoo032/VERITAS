@@ -195,6 +195,31 @@ class CostSummary(BaseModel):
     model: str | None = Field(default=None, exclude=True)
 
 
+class InvocationConfig(BaseModel):
+    """Normalized, secret-free settings that produced a run bundle.
+
+    This is deliberately an allow-list rather than persisted ``sys.argv``.
+    ``key_env`` is the environment-variable name only; the value never enters
+    this model.
+    """
+
+    base_url: str = ""
+    key_env: str | None = None
+    models: list[str] = Field(default_factory=list)
+    mode: str = "adhoc"
+    out: str = ""
+    sla: SLA = Field(default_factory=SLA)
+    budget_usd: float | None = None
+    concurrency: int = 10
+    baseline_dir: str | None = None
+    baseline_id: str | None = None
+    automatic_baseline: bool = True
+    allow_family_baseline: bool = False
+    allow_coarse_baseline: bool = False
+    timeout_s: float = 60.0
+    continue_forensics: bool = False
+
+
 class RunBundle(BaseModel):
     """Top-level JSON output contract (§13; schema-2 fields per docs/08 §3)."""
 
@@ -216,6 +241,7 @@ class RunBundle(BaseModel):
     finished_at: str | None = None
     schema_version: int | None = Field(default=None, alias="schema")
     versions: dict[str, str | int] = Field(default_factory=dict)
+    invocation: InvocationConfig = Field(default_factory=InvocationConfig)
     sla: SLA = Field(default_factory=SLA)
     cost: CostSummary = Field(default_factory=CostSummary)
     overall_score: float | None = None

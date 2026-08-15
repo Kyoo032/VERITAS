@@ -321,7 +321,7 @@ async def test_record_rejects_invalid_args(fake_server, transport, tmp_path: Pat
             vendor="openai", model="  ", api_key="sk-x", endpoint="https://x/v1",
             out=tmp_path, transport=transport,
         )
-    with pytest.raises(ValueError, match="endpoint must not be empty"):
+    with pytest.raises(ValueError, match="endpoint must be a nonempty"):
         await record_baseline(
             vendor="openai", model="gpt-4o", api_key="sk-x", endpoint="",
             out=tmp_path, transport=transport,
@@ -331,6 +331,147 @@ async def test_record_rejects_invalid_args(fake_server, transport, tmp_path: Pat
             vendor="openai", model="gpt-4o", api_key="sk-x", endpoint="https://x/v1",
             out=tmp_path, transport=transport, samples=0,
         )
+
+
+async def test_record_rejects_non_positive_budget(fake_server, transport, tmp_path: Path):
+    with pytest.raises(ValueError, match="budget_usd must be positive"):
+        await record_baseline(
+            vendor="openai", model="gpt-4o", api_key=fake_server.valid_key,
+            endpoint="https://fake.example/v1", out=tmp_path / "b",
+            evidence_root=tmp_path / "runs", transport=transport, budget_usd=0.0,
+        )
+    with pytest.raises(ValueError, match="budget_usd must be positive"):
+        await record_baseline(
+            vendor="openai", model="gpt-4o", api_key=fake_server.valid_key,
+            endpoint="https://fake.example/v1", out=tmp_path / "b",
+            evidence_root=tmp_path / "runs", transport=transport, budget_usd=-1.0,
+        )
+
+
+async def test_record_preflight_budget_cap_is_zero_request_no_artifact(
+    fake_server, transport, tmp_path: Path,
+):
+    """Cap below retry-aware planning estimate aborts before dirs/client/requests."""
+    out = tmp_path / "baselines"
+    evidence_root = tmp_path / "runs"
+    hits = {"n": 0}
+
+    class CountingTransport(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            hits["n"] += 1
+            raise AssertionError("preflight budget abort must not issue HTTP")
+
+    with pytest.raises(BaselineRecordingError, match="planning estimate|budget"):
+        await record_baseline(
+            vendor="openai",
+            model="gpt-4o",
+            api_key=fake_server.valid_key,
+            endpoint="https://fake.example/v1",
+            out=out,
+            evidence_root=evidence_root,
+            transport=CountingTransport(),
+            budget_usd=1e-12,
+        )
+    assert hits["n"] == 0
+    assert not out.exists()
+    assert not evidence_root.exists()
+    assert list(tmp_path.rglob("*.json")) == []
+
+
+async def test_record_mid_run_budget_stop_no_baseline_file(
+    fake_server, transport, tmp_path: Path, monkeypatch,
+):
+    """Live accounting stops before the next stage and writes no baseline."""
+    from types import SimpleNamespace
+
+    # Isolate the live cap path from preflight: an unexpectedly expensive
+    # provider response may exceed a plan that was below the operator's cap.
+    monkeypatch.setattr(
+        "supgate.baseline_recorder.plan_baseline_record",
+        lambda **_: SimpleNamespace(estimated_max_usd=0.0),
+    )
+    out = tmp_path / "baselines"
+    evidence_root = tmp_path / "runs"
+    with pytest.raises(BaselineRecordingError, match="budget.*stopped before stage p0.models"):
+        await record_baseline(
+            vendor="openai",
+            model="gpt-4o",
+            api_key=fake_server.valid_key,
+            endpoint="https://fake.example/v1",
+            out=out,
+            evidence_root=evidence_root,
+            transport=transport,
+            budget_usd=1e-12,
+        )
+    assert len(fake_server.requests_log) == 1
+    assert fake_server.requests_log[0]["path"].endswith("/chat/completions")
+    assert list(out.glob("*.json")) == []
+    for path in evidence_root.rglob("*"):
+        if path.is_file():
+            assert fake_server.valid_key not in path.read_text(encoding="utf-8", errors="ignore")
+
+
+async def test_record_with_generous_budget_succeeds(fake_server, transport, tmp_path: Path):
+    record = await record_baseline(
+        vendor="openai",
+        model="gpt-4o",
+        api_key=fake_server.valid_key,
+        endpoint="https://fake.example/v1",
+        out=tmp_path / "b",
+        evidence_root=tmp_path / "runs",
+        transport=transport,
+        budget_usd=100.0,
+    )
+    assert record.baseline_id == "BL-OPENAI-GPT-4O-0001"
+    assert (tmp_path / "b" / "BL-OPENAI-GPT-4O-0001.json").exists()
+
+
+async def test_record_responses_probe_pins_max_output_tokens(fake_server, transport, tmp_path: Path):
+    """F1: the /responses surface probe pins max_output_tokens=16 so the
+    planner's 16-token completion assumption is a true upper bound."""
+    await record_baseline(
+        vendor="openai", model="gpt-4o", api_key=fake_server.valid_key,
+        endpoint="https://fake.example/v1", out=tmp_path / "b",
+        evidence_root=tmp_path / "runs", transport=transport,
+    )
+    responses = [e for e in fake_server.requests_log if e["path"].endswith("/responses")]
+    assert len(responses) == 1
+    payload = json.loads(responses[0]["body"].decode("utf-8"))
+    assert payload == {"model": "gpt-4o", "input": "ping", "max_output_tokens": 16}
+
+
+async def test_capture_loops_abort_mid_stage_when_budget_blocked(fake_server, transport, tmp_path: Path):
+    """F3: the BudgetTracker cap is checked before every request inside the
+    capture loops, not only at stage boundaries; abort raises and sends nothing."""
+    from supgate.baseline_recorder import (
+        _capture_chats,
+        _capture_self_reports,
+        _capture_streams,
+    )
+    from supgate.evidence import EvidenceWriter
+    from supgate.models import BudgetTracker, SurfaceMap
+    from supgate.probes.base import RunContext
+
+    blocked = BudgetTracker(budget_usd=1e-12)
+    blocked.add("x", "y")  # any accounting trips a ~zero cap
+    ctx = RunContext(
+        endpoint="https://fake.example/v1",
+        api_key=fake_server.valid_key,
+        model="gpt-4o",
+        claimed_models=["gpt-4o"],
+        surface=SurfaceMap(),
+        client=httpx.AsyncClient(transport=transport),
+        evidence=EvidenceWriter(tmp_path / "runs" / "evidence", "F3TEST", key_fingerprint="fp"),
+        budget=blocked,
+    )
+    for helper, stage_id in (
+        (_capture_chats, "baseline.capture.chat"),
+        (_capture_streams, "baseline.capture.stream"),
+        (_capture_self_reports, "baseline.capture.self_report"),
+    ):
+        with pytest.raises(BaselineRecordingError, match=f"mid-stage {stage_id}"):
+            await helper(ctx, "gpt-4o", 3)
+    assert fake_server.requests_log == []
 
 
 async def _respond_text(send, status: int, text: str) -> None:

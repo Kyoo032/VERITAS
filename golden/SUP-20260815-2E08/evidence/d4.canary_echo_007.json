@@ -1,0 +1,79 @@
+{
+  "probe": "d4.canary_echo",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Reply with exactly this token and nothing else: VERITAS-85fc53b1a965aa5f"
+        }
+      ],
+      "max_tokens": 24,
+      "temperature": 0
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly this token and nothing else: VERITAS-85fc53b1a965aa5f\"}],\"max_tokens\":24,\"temperature\":0}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "344",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:00:45 GMT",
+      "expires": "0",
+      "openai-processing-ms": "5273",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "2a941722-a19e-465c-baf7-c2541d10815b",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151100398216824858268d9d6rIQnPKot",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_1abadf0652f24edc",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-6b0333cb447d4a8691d93db5",
+      "object": "chat.completion",
+      "created": 1786791641,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "VERITAS-85fc53b1a965aa5f"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4705,
+        "completion_tokens": 18,
+        "total_tokens": 4723,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:00:57.169643+00:00"
+}

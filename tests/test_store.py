@@ -12,6 +12,7 @@ from supgate.models import (
     BaselineReference,
     CalibrationSnapshot,
     Domain,
+    InvocationConfig,
     ProbeResult,
     RunBundle,
     Verdict,
@@ -122,6 +123,22 @@ def _make_v2_db(path: Path) -> None:
         conn.close()
 
 
+def _make_v3_db(path: Path) -> None:
+    """Create a v3-shaped store with a preserved legacy row."""
+    _make_v2_db(path)
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("ALTER TABLE runs ADD COLUMN key_env TEXT")
+        conn.execute("ALTER TABLE runs ADD COLUMN key_fingerprint TEXT")
+        conn.execute("ALTER TABLE baselines ADD COLUMN key_env TEXT")
+        conn.execute("ALTER TABLE baselines ADD COLUMN key_fingerprint TEXT")
+        conn.execute("CREATE TABLE vetoes (run_id TEXT, code TEXT, detail TEXT)")
+        conn.execute("PRAGMA user_version = 3")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _table_columns(path: Path, table: str) -> list[str]:
     conn = sqlite3.connect(path)
     try:
@@ -203,10 +220,10 @@ def _schema2_bundle() -> RunBundle:
 # --- fresh database ----------------------------------------------------------
 
 
-def test_fresh_db_creates_schema_3(tmp_path: Path):
+def test_fresh_db_creates_latest_schema(tmp_path: Path):
     path = tmp_path / "history.db"
     RunStore(path)
-    assert _user_version(path) == SCHEMA_VERSION == 3
+    assert _user_version(path) == SCHEMA_VERSION == 4
     assert _table_columns(path, "runs") == [
         "run_id",
         "endpoint",
@@ -221,6 +238,9 @@ def test_fresh_db_creates_schema_3(tmp_path: Path):
         "calibration_json",
         "key_env",
         "key_fingerprint",
+        "finished_at",
+        "invocation_json",
+        "versions_json",
     ]
     assert _table_columns(path, "probe_results") == [
         "run_id",
@@ -266,7 +286,7 @@ def test_m1_db_migrates_and_preserves_rows(tmp_path: Path):
 
     RunStore(path)
 
-    assert _user_version(path) == 3
+    assert _user_version(path) == 4
     assert _table_columns(path, "runs") == [
         "run_id",
         "endpoint",
@@ -281,6 +301,9 @@ def test_m1_db_migrates_and_preserves_rows(tmp_path: Path):
         "calibration_json",
         "key_env",
         "key_fingerprint",
+        "finished_at",
+        "invocation_json",
+        "versions_json",
     ]
     assert _table_columns(path, "probe_results") == [
         "run_id",
@@ -322,7 +345,7 @@ def test_v2_db_migrates_to_v3_preserving_rows(tmp_path: Path):
     _make_v2_db(path)
     assert _user_version(path) == 2
     store = RunStore(path)
-    assert _user_version(path) == 3
+    assert _user_version(path) == 4
     assert _table_columns(path, "baselines") == [
         "baseline_id",
         "provider_label",
@@ -350,7 +373,7 @@ def test_migration_is_idempotent(tmp_path: Path):
     RunStore(path)
     store = RunStore(path)  # re-open after migration: no-op, no errors
     store._init_schema()  # explicit re-run of the migration path
-    assert _user_version(path) == 3
+    assert _user_version(path) == 4
     assert _table_columns(path, "runs").count("schema_version") == 1
     conn = sqlite3.connect(path)
     try:
@@ -584,3 +607,77 @@ def test_record_baseline_persists_key_identity(tmp_path: Path):
     finally:
         conn.close()
     assert row == ("MY_OFFICIAL_KEY", "sha256:" + "ef" * 32)
+
+
+def test_v3_db_migrates_to_latest_preserving_rows(tmp_path: Path):
+    path = tmp_path / "history.db"
+    _make_v3_db(path)
+    store = RunStore(path)
+    assert _user_version(path) == SCHEMA_VERSION == 4
+    assert _table_columns(path, "runs")[-3:] == [
+        "finished_at",
+        "invocation_json",
+        "versions_json",
+    ]
+    assert store.history()[0]["run_id"] == _M1_ROW[0]
+    assert store.inspect_run(_M1_ROW[0])["invocation"] == {}
+
+
+def test_record_run_persists_config_versions_and_deep_inspection(tmp_path: Path):
+    store = RunStore(tmp_path / "history.db")
+    bundle = _schema2_bundle()
+    bundle.invocation = InvocationConfig(
+        base_url=bundle.endpoint,
+        key_env="SUPPLIER_KEY",
+        models=["gpt-4o"],
+        mode="full",
+    )
+    store.record_run(bundle, tmp_path / "bundle.json")
+
+    conn = sqlite3.connect(store.path)
+    try:
+        finished_at, invocation_json, versions_json = conn.execute(
+            "SELECT finished_at, invocation_json, versions_json FROM runs WHERE run_id = ?",
+            (bundle.run_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert finished_at == bundle.finished_at
+    assert json.loads(invocation_json) == bundle.invocation.model_dump(mode="json")
+    assert json.loads(versions_json) == bundle.versions
+
+    detail = store.inspect_run(bundle.run_id)
+
+    assert detail is not None
+    assert detail["run_id"] == bundle.run_id
+    assert detail["finished_at"] == bundle.finished_at
+    assert detail["invocation"]["key_env"] == "SUPPLIER_KEY"
+    assert detail["versions"] == bundle.versions
+    assert detail["calibration"]["models_catalog"] == 200
+    assert [probe["probe_id"] for probe in detail["probes"]] == [
+        "d4.recount_deviation",
+        "d6.chat.basic",
+    ]
+    assert detail["probes"][0]["metrics"]["deviation_pct"] == 21.4
+    assert detail["probes"][0]["notes"] == bundle.probes[0].notes
+    assert detail["probes"][0]["evidence_ref"] == bundle.probes[0].evidence_ref
+    assert detail["vetoes"] == [
+        {"code": "billing_inflation", "detail": "recount deviation +21.4% over 3 samples"}
+    ]
+    assert store.inspect_run("SUP-MISSING") is None
+
+
+def test_inspect_legacy_run_uses_safe_json_defaults(tmp_path: Path):
+    path = tmp_path / "history.db"
+    _make_m1_db(path)
+    store = RunStore(path)
+    detail = store.inspect_run(_M1_ROW[0])
+    assert detail is not None
+    assert detail["finished_at"] is None
+    assert detail["invocation"] == {}
+    assert detail["versions"] == {}
+    assert detail["calibration"] == {}
+    assert detail["probes"][0]["metrics"] == {}
+    assert detail["probes"][0]["notes"] == []
+    assert detail["probes"][0]["evidence_ref"] == [_M1_PROBE_ROW[6]]
+    assert detail["vetoes"] == []

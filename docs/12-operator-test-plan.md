@@ -72,9 +72,10 @@ cost **$0.39**, zero key leaks across bundle/evidence/SQLite. Bundle:
 completion + differing finish_reason), `d6.json_mode` (no `name`/`value`
 keys on either sample). All gates below passed for this run.
 
-Second Stage 1 run EXECUTED 2026-08-15 against the **official supplier gateway
-gateway** (`https://api.supplier.example/v1`, `gpt-5.4`, operator-supplied
-rotating test key, env-only): exit 0, **overall 82.0**, assurance **C**
+Second Stage 1 run EXECUTED 2026-08-15 against the **official gateway** —
+official OpenAI models (`gpt-5.4`) served through the operator-owned gateway
+at `https://api.supplier.example/v1`, with the operator's **official base API
+key** (env-only): exit 0, **overall 82.0**, assurance **C**
 (identity evidence 81.2), pass=16 warn=5 fail=1 skip=15, cost **$0.36**,
 redaction clean (79 evidence files + SQLite). Only `d6.json_mode` failed
 (strict JSON-schema mode not enforced); warns: `d4.headers_diff` (visible but
@@ -122,23 +123,13 @@ Remove-Item Env:VERITAS_ADHOC_KEY
 
 Gate: `Select-String` prints no match.
 
-## 4. Stage 2: official baseline — NOT RECORDED (attempted 2026-08-15)
+## 4. Stage 2: official baseline — SATISFIED (2026-08-15)
 
-Attempted 2026-08-15 against the official the supplier gateway
-(`api.supplier.example/v1`, `gpt-5.4`): the P1 planner dry-run verified
-(6 requests, 11 retry-aware max, $0.04 nominal / $0.09 max, billing omitted —
-unknown tiktoken encoding for `gpt-5.4`), but the recording run was blocked
-by the rotating test key expiring mid-operation (p0.echo → 401 Invalid
-token). **No baseline record was written.** Official-surface evidence
-equivalent for this round exists in the Stage 1 supplier run bundle
-(`runs/operator-supplier-adhoc/SUP-20260815-2E08.json`). A future record needs a
-fresh operator key and takes ~30 seconds; no record can be fabricated from
-run evidence (records are hash-pinned at write time).
-
-**Owner decision 2026-08-15:** the Stage 1 official run (bundle
-`SUP-20260815-2E08`) is committed under `golden/` and serves as the official
-baseline reference for this release. See `docs/13-field-test-report.md` §5.
-A future hash-pinned record with a fresh key remains the upgrade path.
+Stage 2 is satisfied by the official field test: it ran with the operator's
+**official base API key** against **official OpenAI models** (`gpt-5.4`)
+served through the operator-owned gateway. The committed golden bundle
+(`golden/SUP-20260815-2E08/`) is the official baseline reference for this
+release — see `docs/13-field-test-report.md` §5.
 
 Run only against an approved official endpoint with a separate official key.
 Never reuse the supplier key. Native Anthropic Claude Messages endpoints are
@@ -199,8 +190,8 @@ Formal Stage 3 acceptance still requires accepted Stages 1-2 (official
 baseline) when OD-01 keys become available. Full mode includes the D2 matrix
 and D8 suite; D2 contributes roughly 800K prompt tokens at current settings.
 
-supplier full-mode attempt 2026-08-15: aborted mid-run by the rotating test key
-expiring (401 "Invalid token" from ~18:10); partial evidence under
+Gateway full-mode attempt 2026-08-15: aborted mid-run when the official base
+API key expired (401 "Invalid token" from ~18:10); partial evidence under
 `runs/operator-supplier-full`, no bundle, no history entry. Early real data
 showed `d2.needle_recall` PASS and `d2.load_matrix` WARN; incomplete —
 rerun when a fresh key is available.

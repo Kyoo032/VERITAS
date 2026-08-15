@@ -106,6 +106,9 @@ Notes on M1 shape:
 Additive changes over M1. `schema` becomes a first-class field; `surface` is
 persisted; `baseline` records the matched baseline; `transit` is enriched;
 `ProbeResult.metrics` is added; `cost` summarizes budget accounting.
+`key_env` / `key_fingerprint` (security hardening) record the key source
+name and the one-way SHA-256 fingerprint of the key used; the raw key is
+never persisted (docs/08 §18 redaction contract).
 
 ```json
 {
@@ -113,6 +116,8 @@ persisted; `baseline` records the matched baseline; `transit` is enriched;
   "run_id": "SUP-20260806-00A1",
   "endpoint": "https://api.supplier.example/v1",
   "claimed_models": ["gpt-4o"],
+  "key_env": "SUPGATE_KEY",
+  "key_fingerprint": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "mode": "full",
   "started_at": "2026-08-06T09:00:00+00:00",
   "finished_at": "2026-08-06T09:03:40+00:00",
@@ -462,6 +467,8 @@ A baseline is a standalone JSON file `baselines/<baseline_id>.json`:
   "baseline_id": "BL-OFFICIAL-OPENAI-GPT4O-0001",
   "provider_label": "openai",
   "claimed_models": ["gpt-4o"],
+  "key_env": "MY_OFFICIAL_KEY",
+  "key_fingerprint": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "captured_at": "2026-08-06T00:00:00+00:00",
   "surface": { "models_catalog": 200, "responses_api": true, "messages_api": true, "claimed_present": true },
   "fingerprints": {

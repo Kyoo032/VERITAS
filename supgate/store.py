@@ -4,9 +4,12 @@ Schema is versioned via ``PRAGMA user_version`` (docs/08 §18 MR3). Version 2
 is fully additive over the M1 store: ``runs`` gains ``schema_version`` /
 ``baseline_id`` / ``calibration_json``, ``probe_results`` gains
 ``metrics_json`` / ``notes_json``, and the ``baselines`` / ``vetoes`` tables
-are created. Existing databases migrate in place with ``ALTER TABLE ADD
-COLUMN`` and ``CREATE TABLE IF NOT EXISTS`` — user data is never dropped or
-recreated, and re-running the migration is a no-op.
+are created. Version 3 adds the one-way key identity columns
+``key_env`` / ``key_fingerprint`` to ``runs`` and ``baselines`` (the raw API
+key is never stored — only its SHA-256 fingerprint). Existing databases
+migrate in place with ``ALTER TABLE ADD COLUMN`` and ``CREATE TABLE IF NOT
+EXISTS`` — user data is never dropped or recreated, and re-running the
+migration is a no-op.
 
 ``record_run`` writes rows with explicit column names and persists the
 schema-2 metadata when the bundle carries it (compatible with current
@@ -26,7 +29,7 @@ from supgate.models import RunBundle
 if TYPE_CHECKING:
     from supgate.baselines import BaselineRecord
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _RUNS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("run_id", "TEXT PRIMARY KEY"),
@@ -40,6 +43,8 @@ _RUNS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
     ("baseline_id", "TEXT"),
     ("calibration_json", "TEXT"),
+    ("key_env", "TEXT"),
+    ("key_fingerprint", "TEXT"),
 )
 
 _PROBE_RESULTS_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -61,6 +66,8 @@ _BASELINES_COLUMNS: tuple[tuple[str, str], ...] = (
     ("captured_at", "TEXT"),
     ("fingerprints_json", "TEXT"),
     ("bundle_path", "TEXT"),
+    ("key_env", "TEXT"),
+    ("key_fingerprint", "TEXT"),
 )
 
 _VETOES_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -101,8 +108,9 @@ class RunStore:
                 """
                 INSERT INTO runs (
                     run_id, endpoint, model, mode, started_at, overall, assurance,
-                    bundle_path, schema_version, baseline_id, calibration_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    bundle_path, schema_version, baseline_id, calibration_json,
+                    key_env, key_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     bundle.run_id,
@@ -116,6 +124,8 @@ class RunStore:
                     schema_version,
                     baseline_id,
                     calibration_json,
+                    bundle.key_env,
+                    bundle.key_fingerprint,
                 ),
             )
             conn.executemany(
@@ -159,8 +169,8 @@ class RunStore:
                 """
                 INSERT OR IGNORE INTO baselines (
                     baseline_id, provider_label, claimed_models, captured_at,
-                    fingerprints_json, bundle_path
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    fingerprints_json, bundle_path, key_env, key_fingerprint
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     safe["baseline_id"],
@@ -169,6 +179,8 @@ class RunStore:
                     safe["captured_at"],
                     json.dumps(safe["fingerprints"], default=str),
                     redact_text(str(bundle_path)) if bundle_path else None,
+                    safe.get("key_env") or "",
+                    safe.get("key_fingerprint") or "",
                 ),
             )
 
@@ -207,8 +219,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column(conn, "runs", "schema_version", "INTEGER NOT NULL DEFAULT 1")
     _add_column(conn, "runs", "baseline_id", "TEXT")
     _add_column(conn, "runs", "calibration_json", "TEXT")
+    _add_column(conn, "runs", "key_env", "TEXT")
+    _add_column(conn, "runs", "key_fingerprint", "TEXT")
     _add_column(conn, "probe_results", "metrics_json", "TEXT")
     _add_column(conn, "probe_results", "notes_json", "TEXT")
+    _add_column(conn, "baselines", "key_env", "TEXT")
+    _add_column(conn, "baselines", "key_fingerprint", "TEXT")
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

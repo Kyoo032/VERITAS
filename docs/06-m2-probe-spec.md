@@ -163,6 +163,8 @@ in `docs/08-output-data-contract.md`. Shape:
   "baseline_id": "BL-OPENAI-GPT-4O-0001",
   "provider_label": "openai",
   "claimed_models": ["gpt-4o"],
+  "key_env": "MY_OFFICIAL_KEY",
+  "key_fingerprint": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "captured_at": "2026-08-06T00:00:00+00:00",
   "surface": {
     "models_catalog": 200,
@@ -188,6 +190,10 @@ in `docs/08-output-data-contract.md`. Shape:
 - `provider_label`: free-text reference label only (openai, anthropic,
   generic). It is metadata about the baseline run, NOT an assertion about any
   later tested endpoint.
+- `key_env` / `key_fingerprint`: the key's source env-var name and its one-way
+  SHA-256 fingerprint (security hardening). The raw key is never written to
+  the baseline file; recomputing the fingerprint from a candidate key lets an
+  operator verify which key produced the record.
 - `fingerprints`: per-signal reference statistics. Each entry carries its own
   sample count (`n`) so consumers know how much confidence to place in it.
 - `surface`: snapshot of the discovered API surface at baseline time.

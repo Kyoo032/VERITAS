@@ -19,6 +19,7 @@ from supgate.baselines import (
     select_baseline,
 )
 from supgate.evidence import EvidenceWriter, redact_payload
+from supgate.keyid import key_fingerprint
 from supgate.models import (
     SLA,
     Authenticity,
@@ -67,6 +68,7 @@ class Orchestrator:
         *,
         endpoint: str,
         api_key: str,
+        key_env: str | None = None,
         claimed_models: list[str],
         manifest_path: Path,
         mode: str = "adhoc",
@@ -93,7 +95,8 @@ class Orchestrator:
         selected: BaselineRecord | None = match.record if match else None
         run_id = _run_id()
         started = _now()
-        evidence = EvidenceWriter(out_dir / "evidence", run_id)
+        fp = key_fingerprint(api_key)
+        evidence = EvidenceWriter(out_dir / "evidence", run_id, key_fingerprint=fp)
         run_model = model or (claimed_models[0] if claimed_models else DEFAULT_MODEL)
         budget = BudgetTracker(
             budget_usd=budget_usd if budget_usd is not None else self.budget_usd,
@@ -156,6 +159,8 @@ class Orchestrator:
             run_id=run_id,
             endpoint=endpoint,
             claimed_models=claimed_models,
+            key_env=key_env,
+            key_fingerprint=fp,
             mode=mode,
             started_at=started,
             finished_at=_now(),

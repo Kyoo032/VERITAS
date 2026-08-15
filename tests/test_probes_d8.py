@@ -376,13 +376,16 @@ class D8CapabilityServer:
         if self.caching_mode == "regress_ttft":
             delay = (0.005, 1.0, 0.005)[n]
         elif self.caching_mode == "drop_ttft":
-            delay = (0.08, 0.004, 0.003)[n]
+            # Cold call dominates; repeats are separated by >100ms so event-loop
+            # scheduling noise (~45ms worst observed) can never flip the strict
+            # ordering assertions (loaded-machine flake, fixed 2026-08-15).
+            delay = (0.6, 0.15, 0.03)[n]
         elif self.caching_mode == "no_drop":
             # repeat delays nominally equal-to/larger-than the cold call —
             # clearly NOT faster even under measurement jitter
-            delay = (0.02, 0.05, 0.05)[n]
+            delay = (0.25, 0.4, 0.4)[n]
         elif self.caching_mode == "pass":
-            delay = (0.06, 0.005, 0.005)[n]
+            delay = (0.25, 0.05, 0.03)[n]
         else:
             delay = 0.02
         chunks: list[dict[str, Any] | None] = [

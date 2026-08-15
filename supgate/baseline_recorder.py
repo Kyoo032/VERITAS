@@ -42,6 +42,7 @@ from supgate.baselines import (
     percentile,
 )
 from supgate.evidence import EvidenceWriter, redact_url
+from supgate.keyid import key_fingerprint
 from supgate.models import BudgetTracker, SurfaceMap, Verdict
 from supgate.probes.base import (
     RateLimitError,
@@ -641,6 +642,7 @@ async def record_baseline(
     vendor: str,
     model: str,
     api_key: str,
+    key_env: str | None = None,
     endpoint: str,
     out: Path,
     label: str | None = None,
@@ -684,7 +686,9 @@ async def record_baseline(
     evidence_root.mkdir(parents=True, exist_ok=True)
 
     run_id = f"BASELINE-{datetime.now(UTC):%Y%m%d}-{secrets.token_hex(2).upper()}"
-    evidence = EvidenceWriter(evidence_root / "evidence", run_id)
+    evidence = EvidenceWriter(
+        evidence_root / "evidence", run_id, key_fingerprint=key_fingerprint(api_key)
+    )
     surface = SurfaceMap()
     client = httpx.AsyncClient(transport=transport, timeout=60.0)
     ctx = RunContext(
@@ -747,6 +751,8 @@ async def record_baseline(
             model=model,
             model_version=model_version,
             endpoint=redact_url(endpoint),
+            key_env=key_env or "",
+            key_fingerprint=key_fingerprint(api_key),
             captured_at=captured_at or datetime.now(UTC).isoformat(),
             claimed_models=claimed_models or [model],
             surface=BaselineSurface(

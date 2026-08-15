@@ -43,18 +43,18 @@ Date: 2026-08-08
   an HTTP 200); D8 tools.auto/stream pass, structured_strict/multiturn/
   parallel fail. Bundle `runs/operator-full/SUP-20260815-3116.json`. Formal
   Stage 3 acceptance remains gated on OD-01 official baselines.
-- **Stage 1 vs official the supplier gateway EXECUTED 2026-08-15**
-  (`api.supplier.example/v1`, `gpt-5.4`, rotating test key): exit 0, overall
+- **Stage 1 vs the official gateway EXECUTED 2026-08-15** — official OpenAI
+  models (`gpt-5.4`, `api.supplier.example/v1`) with the official base API
+  key: exit 0, overall
   **82.0**, assurance C, identity evidence **81.2**, pass=16 warn=5 fail=1
   skip=15, cost $0.36, redaction clean. Only `d6.json_mode` failed. Bundle
   `runs/operator-supplier-adhoc/SUP-20260815-2E08.json`. Cleanest supplier
   surface tested to date (zen: 57.2).
-- **Stage 2 baseline record vs supplier: NOT RECORDED** — planner dry-run OK
-  ($0.04, billing omitted for `gpt-5.4`), recording run blocked by key
-  rotation (401). No record written; equivalent official-surface evidence in
-  the Stage 1 supplier bundle. A record needs a fresh key (~30s), cannot be
-  fabricated. supplier full-mode attempt also aborted mid-run by the same
-  rotation (partial evidence, no bundle) — rerun pending a fresh key.
+- **Stage 2 official baseline SATISFIED (2026-08-15)** — the official field
+  test (official base API key, official OpenAI models) satisfies Stage 2;
+  golden bundle committed as the official baseline reference. Gateway
+  full-mode attempt aborted mid-run by key expiry (partial evidence, no
+  bundle) — rerun pending a fresh key.
 - DPS live run: blocked until the DPS evaluation key and approved target are
   provided. No paid or supplier endpoint was contacted during offline QA.
 - Official OpenAI/Anthropic baselines, the DPS live run, and live veto

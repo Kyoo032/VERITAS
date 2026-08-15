@@ -109,6 +109,7 @@ def test_baseline_record_wires_env_key_and_options(monkeypatch, tmp_path):
          "--endpoint", "https://api.openai.com/v1", "--key-env", "SUPGATE_OPENAI_OFFICIAL_KEY",
          "--label", "official", "--model-version", "gpt-4o-2024-08-06",
          "--samples", "5", "--streams", "2", "--confirm-official",
+         "--budget-usd", "5", "--timeout-s", "15",
          "--out", str(tmp_path / "b"), "--evidence-out", str(tmp_path / "r")],
     )
     assert result.exit_code == 0
@@ -120,6 +121,8 @@ def test_baseline_record_wires_env_key_and_options(monkeypatch, tmp_path):
     assert captured["samples"] == 5 and captured["streams"] == 2
     assert captured["confirmed_official"] is True
     assert captured["endpoint"] == "https://api.openai.com/v1"
+    assert captured["budget_usd"] == 5.0
+    assert captured["timeout_s"] == 15.0
     assert "sk-official-secret1234567890" not in result.output
     assert "recorded baseline BL-OPENAI-GPT4O-0001" in result.output
 
@@ -160,6 +163,124 @@ def test_baseline_record_aborts_on_out_of_range_counts(monkeypatch, tmp_path):
     )
     assert result.exit_code == 3
     assert "--samples" in result.output
+
+
+def test_baseline_record_dry_run_does_not_resolve_key_create_dirs_or_request(
+    monkeypatch, tmp_path
+):
+    out = tmp_path / "b"
+    evidence = tmp_path / "r"
+    monkeypatch.delenv("MISSING_KEY", raising=False)
+    monkeypatch.setattr(
+        "supgate.cli._resolve_key",
+        lambda _: (_ for _ in ()).throw(AssertionError("must not resolve key")),
+    )
+
+    async def forbidden_record(**kwargs):
+        raise AssertionError("must not record")
+
+    monkeypatch.setattr("supgate.cli.record_baseline", forbidden_record)
+    result = runner.invoke(
+        app,
+        ["baseline", "record", "--vendor", "openai", "--model", "gpt-4o",
+         "--endpoint", "https://api.openai.com/v1", "--key-env", "MISSING_KEY",
+         "--out", str(out), "--evidence-out", str(evidence), "--dry-run", "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["key_env"] == "MISSING_KEY"
+    assert payload["plan"]["requests"] == 17
+    assert payload["plan"]["max_requests"] == 33
+    assert not out.exists()
+    assert not evidence.exists()
+
+
+def test_baseline_record_json_actual_is_one_object_and_preview_is_stderr(
+    monkeypatch, tmp_path
+):
+    async def fake_record_baseline(**kwargs):
+        return BaselineRecord(
+            baseline_id="BL-OPENAI-GPT4O-0001", provider_label="openai",
+            vendor="openai", model="gpt-4o", endpoint=kwargs["endpoint"],
+            captured_at="2026-08-06T00:00:00+00:00", claimed_models=["gpt-4o"],
+        )
+
+    monkeypatch.setenv("SUPGATE_JSON_KEY", "raw-json-secret")
+    monkeypatch.setattr("supgate.cli.record_baseline", fake_record_baseline)
+    result = runner.invoke(
+        app,
+        ["baseline", "record", "--vendor", "openai", "--model", "gpt-4o",
+         "--endpoint", "https://api.openai.com/v1", "--key-env", "SUPGATE_JSON_KEY",
+         "--budget-usd", "10", "--timeout-s", "8", "--json",
+         "--out", str(tmp_path / "b")],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is False
+    assert payload["baseline"]["baseline_id"] == "BL-OPENAI-GPT4O-0001"
+    assert "raw-json-secret" not in result.stdout
+    assert "baseline request/cost preview" in result.stderr
+
+
+def test_baseline_record_rejects_non_positive_cap_and_timeout(tmp_path):
+    common = [
+        "baseline", "record", "--vendor", "openai", "--model", "gpt-4o",
+        "--endpoint", "https://api.openai.com/v1", "--key-env", "NO_KEY",
+        "--dry-run", "--out", str(tmp_path / "b"),
+    ]
+    cap = runner.invoke(app, [*common, "--budget-usd", "0"])
+    timeout = runner.invoke(app, [*common, "--timeout-s", "-1"])
+    assert cap.exit_code == 3 and "--budget-usd must be positive" in cap.output
+    assert timeout.exit_code == 3 and "--timeout-s must be positive" in timeout.output
+    assert not (tmp_path / "b").exists()
+
+
+def test_baseline_record_dry_run_rejects_secret_bearing_endpoints_without_leak_or_dirs(
+    tmp_path,
+):
+    secret = "never-print-this-token"
+    endpoints = [
+        f"https://user:{secret}@api.example/v1",
+        f"https://api.example/v1?api_key={secret}",
+        f"https://api.example/v1#{secret}",
+    ]
+    for index, endpoint in enumerate(endpoints):
+        out = tmp_path / f"b{index}"
+        evidence = tmp_path / f"r{index}"
+        result = runner.invoke(
+            app,
+            [
+                "baseline", "record", "--vendor", "openai", "--model", "gpt-4o",
+                "--endpoint", endpoint, "--key-env", "MISSING", "--dry-run", "--json",
+                "--out", str(out), "--evidence-out", str(evidence),
+            ],
+        )
+        assert result.exit_code == 3
+        assert secret not in result.output
+        assert not out.exists()
+        assert not evidence.exists()
+
+
+def test_baseline_record_dry_run_budget_and_preview_use_retry_aware_estimate(tmp_path):
+    common = [
+        "baseline", "record", "--vendor", "openai", "--model", "gpt-4o",
+        "--endpoint", "https://api.example/v1", "--key-env", "MISSING", "--dry-run",
+        "--out", str(tmp_path / "b"),
+    ]
+    preview = runner.invoke(app, common)
+    assert preview.exit_code == 0
+    assert "requests=17 max_requests=33" in preview.output
+    assert "estimated_usd=" in preview.output and "estimated_max_usd=" in preview.output
+
+    planned = runner.invoke(app, [*common, "--json"])
+    payload = json.loads(planned.stdout)
+    max_estimate = payload["plan"]["estimated_max_usd"]
+    nominal = payload["plan"]["estimated_usd"]
+    midpoint = (nominal + max_estimate) / 2
+    capped = runner.invoke(app, [*common, "--json", "--budget-usd", str(midpoint)])
+    assert capped.exit_code == 0
+    assert json.loads(capped.stdout)["within_budget"] is False
 
 
 # --- list / show / select ---------------------------------------------------

@@ -105,7 +105,8 @@ Notes on M1 shape:
 
 Additive changes over M1. `schema` becomes a first-class field; `surface` is
 persisted; `baseline` records the matched baseline; `transit` is enriched;
-`ProbeResult.metrics` is added; `cost` summarizes budget accounting.
+`ProbeResult.metrics` is added; `cost` summarizes budget accounting;
+`invocation` records a normalized, secret-free option allow-list.
 `key_env` / `key_fingerprint` (security hardening) record the key source
 name and the one-way SHA-256 fingerprint of the key used; the raw key is
 never persisted (docs/08 §18 redaction contract).
@@ -125,7 +126,30 @@ never persisted (docs/08 §18 redaction contract).
     "supgate": "0.2.0",
     "manifest": "3",
     "schema": 2,
-    "baselines": "BL-OFFICIAL-OPENAI-GPT4O-0001"
+    "baselines": "BL-OFFICIAL-OPENAI-GPT4O-0001",
+    "python": "<installed Python version>",
+    "httpx": "<installed version>",
+    "pydantic": "<installed version>",
+    "PyYAML": "<installed version>",
+    "tiktoken": "<installed version>",
+    "typer": "<installed version>"
+  },
+  "invocation": {
+    "base_url": "https://api.supplier.example/v1",
+    "key_env": "SUPGATE_KEY",
+    "models": ["gpt-4o"],
+    "mode": "full",
+    "out": "runs",
+    "sla": { "ttft_s": 5.0, "tpot_ms": 500.0, "e2e_s": 60.0 },
+    "budget_usd": 25.0,
+    "concurrency": 2,
+    "baseline_dir": "baselines",
+    "baseline_id": null,
+    "automatic_baseline": true,
+    "allow_family_baseline": false,
+    "allow_coarse_baseline": false,
+    "timeout_s": 60.0,
+    "continue_forensics": false
   },
   "sla": { "ttft_s": 5.0, "tpot_ms": 500.0, "e2e_s": 60.0 },
   "cost": {
@@ -189,6 +213,16 @@ Schema-2 additions and rules:
 
 - `schema` (int): the bundle schema version. Absent values in M1 bundles are
   treated as `1`.
+- `invocation` (object): an additive allow-list of normalized run settings:
+  `base_url`, key environment-variable **name** `key_env`, `models`, `mode`,
+  `out`, `sla`, `budget_usd`, `concurrency`, `baseline_dir`, `baseline_id`,
+  `automatic_baseline`, `allow_family_baseline`, `allow_coarse_baseline`,
+  `timeout_s`, and `continue_forensics`. It is not raw argv and never contains
+  the key value.
+- `versions` additionally records the installed versions for Python,
+  `supgate`, `httpx`, `pydantic`, `PyYAML`, `tiktoken`, and `typer` (or an
+  explicit unavailable marker when distribution metadata is missing); schema,
+  manifest, and selected-baseline metadata remain alongside them.
 - `cost` (object): token/cost summary from `BudgetTracker`; `prompt_tokens`
   and `completion_tokens` are tokenizer-accurate in M2 (replacing the M1
   char/4 heuristic). `blocked` mirrors the tracker's budget cap state.
@@ -298,9 +332,12 @@ unchanged between M1 and M2:
 }
 ```
 
-- `p0_verdicts` is keyed by probe id with verdict strings; a `warn` or `fail`
-  here degrades confidence but does not abort the run (only a failed
-  `p0.echo` flips exit code to 2 via `endpoint_dead`).
+- `p0_verdicts` is keyed by probe id with verdict strings. By default, a failed
+  `p0.echo` fast-stops further endpoint work, emits explicit SKIP rows for all
+  remaining probes, and flips exit code to 2 via `endpoint_dead`;
+  `--continue-forensics` opts into full collection after that failure. A WARN
+  does not fast-stop. Other P0 WARN/FAIL results degrade confidence according
+  to their probe semantics.
 - `models_catalog` is `len(SurfaceMap.models)`; `claimed_present` is whether
   any claimed model appears in the catalog. These drive skip rules
   (`no_claimed_model`) and assurance basis text.
@@ -494,7 +531,22 @@ Rules:
 - Baselines are written by the `baseline` CLI command, which requires
   `p0.echo == pass` on the recording run.
 
-### 10.2 Bundle reference
+### 10.2 Operator planning and cost cap
+
+`supgate baseline record` prints a request/cost preview before key resolution
+or any paid request. `--dry-run` is a planner that makes no endpoint requests
+and creates no user files (tiktoken encoding data may be fetched/cached on
+first use), and `--json` exposes the per-stage plan and its assumptions.
+`requests`/`estimated_usd` are nominal figures; `max_requests`/
+`estimated_max_usd` are a retry-aware worst-case ceiling — every retryable
+stage may retry once on HTTP 429/5xx, so its requests and prompt tokens are
+counted at 2x nominal (`baseline.capture.responses` is one direct request).
+Token/cost figures remain assumptions where no `max_tokens`/`max_output_tokens`
+pin exists (e.g. `p0.models`), so they are not provider-enforced upper bounds.
+`--budget-usd` is enforced at preflight against the retry-aware ceiling and by
+the runtime `BudgetTracker`, which remains the actual cap during collection.
+
+### 10.3 Bundle reference
 
 A run bundle records which baseline was used:
 
@@ -517,7 +569,7 @@ probes fall back per `docs/06-m2-probe-spec.md`.
 
 ## 11. SQLite target schema and migrations
 
-Current store (`supgate/store.py`, `~/.supgate/history.db`):
+Legacy M1 store shape (`supgate/store.py`, `~/.supgate/history.db`):
 
 ```sql
 CREATE TABLE runs (
@@ -542,7 +594,7 @@ CREATE TABLE probe_results (
 );
 ```
 
-Target schema (migrated via `PRAGMA user_version`, see Section 18):
+Current additive schema 4 (migrated via `PRAGMA user_version`, see Section 18):
 
 ```sql
 CREATE TABLE runs (
@@ -556,7 +608,12 @@ CREATE TABLE runs (
     bundle_path TEXT,
     schema_version INTEGER NOT NULL DEFAULT 1,
     baseline_id TEXT,
-    calibration_json TEXT
+    calibration_json TEXT,
+    key_env TEXT,
+    key_fingerprint TEXT,
+    finished_at TEXT,
+    invocation_json TEXT,
+    versions_json TEXT
 );
 
 CREATE TABLE probe_results (
@@ -577,7 +634,9 @@ CREATE TABLE baselines (
     claimed_models TEXT,
     captured_at TEXT,
     fingerprints_json TEXT,
-    bundle_path TEXT
+    bundle_path TEXT,
+    key_env TEXT,
+    key_fingerprint TEXT
 );
 
 CREATE TABLE vetoes (
@@ -587,13 +646,20 @@ CREATE TABLE vetoes (
 );
 ```
 
-- `schema_version`/`calibration_json`/`baseline_id` on `runs` are additive
-  columns (safe `ALTER TABLE ADD COLUMN`).
+- `schema_version`/`calibration_json`/`baseline_id`, key identity, and schema-4
+  `finished_at`/`invocation_json`/`versions_json` on `runs` are additive
+  columns (safe `ALTER TABLE ADD COLUMN`). `invocation_json` contains the same
+  secret-free allow-list as the bundle.
 - `probe_results.metrics_json`/`notes_json` hold JSON arrays/objects and are
   additive.
 - `baselines` and `vetoes` are new tables.
-- The history CLI reads only the `runs` projection (run_id, endpoint, model,
-  mode, overall, assurance, started_at); schema-2 columns are for tooling.
+- `supgate history` lists the compact `runs` projection. `supgate history
+  --run-id <RUN_ID>` decodes the full stored run metadata, invocation, versions,
+  calibration, probe metrics/notes/evidence refs, and vetoes; `--json` emits
+  the same detail as one JSON value.
+- Migrations from M1, schema 2, and schema 3 to schema 4 remain additive and
+  preserve existing rows. Legacy rows expose safe empty/default values for
+  metadata that did not yet exist.
 
 ---
 

@@ -1,0 +1,78 @@
+{
+  "probe": "d6.usage_fields",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is 2+2?"
+        }
+      ],
+      "max_tokens": 32
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}],\"max_tokens\":32}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "320",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:06:37 GMT",
+      "expires": "0",
+      "openai-processing-ms": "7622",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "9a87d4c7-3051-4d3b-ba60-ffb2fb5e40c0",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151106301265320848268d9d6q7yN82G5",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_0441e8e8ab8e4d10",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-a9afd7144afa483987759e3e",
+      "object": "chat.completion",
+      "created": 1786791990,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "4"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4689,
+        "completion_tokens": 5,
+        "total_tokens": 4694,
+        "prompt_tokens_details": {
+          "cached_tokens": 4352
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:06:49.720995+00:00"
+}

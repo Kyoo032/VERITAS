@@ -1,0 +1,40 @@
+{
+  "probe": "d6.chat.sse",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Say hello in one short sentence."
+        }
+      ],
+      "max_tokens": 32,
+      "stream": true
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}],\"max_tokens\":32,\"stream\":true}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-type": "text/event-stream",
+      "date": "Sat, 15 Aug 2026 11:04:01 GMT",
+      "via": "1.1 Caddy",
+      "x-accel-buffering": "no",
+      "x-new-api-version": "39c344862",
+      "x-oneapi-request-id": "202608151103463195496778268d9d6Sh6HVaDG",
+      "transfer-encoding": "chunked"
+    },
+    "body": ": PING\n\n: PING\n\ndata: {\"id\":\"chatcmpl-ea354d02d241424bad9c0736\",\"object\":\"chat.completion.chunk\",\"created\":1786791867,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: {\"id\":\"chatcmpl-ea354d02d241424bad9c0736\",\"object\":\"chat.completion.chunk\",\"created\":1786791867,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\".\"}}]}\n\ndata: {\"id\":\"chatcmpl-ea354d02d241424bad9c0736\",\"object\":\"chat.completion.chunk\",\"created\":1786791867,\"model\":\"gpt-5.4\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"chatcmpl-stream\",\"object\":\"chat.completion.chunk\",\"created\":1786791868,\"model\":\"gpt-5-4\",\"choices\":[],\"usage\":{\"prompt_tokens\":4393,\"completion_tokens\":6,\"total_tokens\":4399,\"prompt_tokens_details\":{\"cached_tokens\":3840}}}\n\ndata: [DONE]\n"
+  },
+  "captured_at": "2026-08-15T11:04:40.312885+00:00"
+}

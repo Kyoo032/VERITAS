@@ -1,0 +1,82 @@
+{
+  "probe": "d6.json_mode",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/chat/completions",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Return JSON with keys \"name\" and \"value\"."
+        }
+      ],
+      "temperature": 0,
+      "max_tokens": 64,
+      "response_format": {
+        "type": "json_object"
+      }
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/chat/completions' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"messages\":[{\"role\":\"user\",\"content\":\"Return JSON with keys \\\"name\\\" and \\\"value\\\".\"}],\"temperature\":0,\"max_tokens\":64,\"response_format\":{\"type\":\"json_object\"}}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "340",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:04:40 GMT",
+      "expires": "0",
+      "openai-processing-ms": "7183",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "b10c2890-ef72-465b-b572-19481f48fd0d",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151104330841285168268d9d6WjA0CEOX",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_9c1b383a41c44a1f",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "chatcmpl-007218f1dfdb4cb499a5c0be",
+      "object": "chat.completion",
+      "created": 1786791878,
+      "model": "gpt-5.4",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"name\":\"value\"}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 4397,
+        "completion_tokens": 12,
+        "total_tokens": 4409,
+        "prompt_tokens_details": {
+          "cached_tokens": 3840
+        }
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:04:52.241824+00:00"
+}

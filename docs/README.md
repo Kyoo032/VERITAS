@@ -26,6 +26,8 @@ data, and validation decisions.
 | 9 | [09-testing-validation-plan.md](09-testing-validation-plan.md) | Fixtures, replay, live validation, quality gates, cost safety |
 | 10 | [10-open-decisions.md](10-open-decisions.md) | Owner decisions and blockers that must be resolved |
 | 11 | [11-m2-build-status.md](11-m2-build-status.md) | Implemented scope, offline acceptance, live blockers, carry-over |
+| 12 | [12-operator-test-plan.md](12-operator-test-plan.md) | Operator stages 0–3, bug packet, debug loop, backlog |
+| 13 | [13-field-test-report.md](13-field-test-report.md) | Official supplier gateway field test results + golden reference |
 
 ## Authority rules
 

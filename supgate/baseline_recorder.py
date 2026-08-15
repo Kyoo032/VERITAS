@@ -24,9 +24,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
+from supgate.baseline_plan import _RESPONSES_MAX_OUTPUT_TOKENS, plan_baseline_record
 from supgate.baselines import (
     BASELINE_SCHEMA_VERSION,
     BaselineRecord,
@@ -355,6 +357,7 @@ async def _capture_chats(ctx: RunContext, model: str, samples: int) -> dict[str,
     contents: list[str] = []
     usages: list[dict[str, Any] | None] = []
     for _ in range(samples):
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.chat", mid_stage=True)
         try:
             response = await request_with_retry(
                 ctx, "baseline.capture.chat", "POST", "/chat/completions",
@@ -403,6 +406,7 @@ async def _capture_streams(ctx: RunContext, model: str, streams: int) -> dict[st
     chunks: list[int] = []
     usage_schemas: list[dict[str, bool]] = []
     for _ in range(streams):
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.stream", mid_stage=True)
         try:
             result = await ctx.stream(
                 "baseline.capture.stream", "/chat/completions", payload=_stream_payload(model)
@@ -434,6 +438,7 @@ async def _capture_self_reports(ctx: RunContext, model: str, samples: int) -> li
 
     observations: list[str] = []
     for _ in range(samples):
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.self_report", mid_stage=True)
         try:
             response = await request_with_retry(
                 ctx, "baseline.capture.self_report", "POST", "/chat/completions",
@@ -551,6 +556,7 @@ async def _capture_billing(ctx: RunContext) -> dict[str, Any]:
     if not deviations:
         raise BaselineRecordingError("billing recount calibration has no non-cached samples")
 
+    _raise_if_budget_blocked(ctx, next_stage="d4.wrap_offset")
     wrap = await WrapOffsetProbe().run(ctx)
     wrap_metrics = wrap.metrics.get("wrap_offset", {})
     wrap_samples = wrap_metrics.get("per_sample")
@@ -570,12 +576,49 @@ async def _capture_billing(ctx: RunContext) -> dict[str, Any]:
     }
 
 
+def _raise_if_budget_blocked(
+    ctx: RunContext, *, next_stage: str, mid_stage: bool = False
+) -> None:
+    """Abort a capped recording before its next request.
+
+    ``mid_stage=False`` guards the boundary before a logical stage;
+    ``mid_stage=True`` guards each request inside a multi-sample capture loop
+    so the cap is enforced per request, not per stage (F3). Both raise
+    :class:`BaselineRecordingError`, preserving the no-artifact guarantee.
+    """
+
+    if ctx.budget.blocked:
+        position = f"mid-stage {next_stage}" if mid_stage else f"before stage {next_stage}"
+        raise BaselineRecordingError(
+            "baseline recording budget cap exhausted; "
+            f"stopped {position} (estimated ${ctx.budget.estimated_usd:.10f})"
+        )
+
+
 def _mean_std(values: list[float]) -> dict[str, Any]:
     return MeanStdFingerprint(
         mean=mean(values),
         std=stdev(values) if len(values) > 1 else 0.0,
         n=len(values),
     ).model_dump()
+
+
+def validate_baseline_endpoint(endpoint: str) -> None:
+    """Validate a credential-free HTTP(S) base URL without reflecting it."""
+
+    if not endpoint or endpoint != endpoint.strip():
+        raise ValueError("endpoint must be a nonempty HTTP(S) base URL")
+    try:
+        parsed = urlsplit(endpoint)
+        invalid_port = parsed.port is not None and not (1 <= parsed.port <= 65535)
+    except ValueError as exc:
+        raise ValueError("endpoint must be a valid HTTP(S) base URL") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or invalid_port:
+        raise ValueError("endpoint must be a valid HTTP(S) base URL")
+    if "?" in endpoint or "#" in endpoint:
+        raise ValueError("endpoint must be a base URL without query or fragment")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("endpoint base URL must not contain userinfo")
 
 
 def _build_fingerprints(
@@ -655,6 +698,8 @@ async def record_baseline(
     run_p0_gate: bool = True,
     confirmed_official: bool = False,
     captured_at: str | None = None,
+    budget_usd: float | None = None,
+    timeout_s: float = 60.0,
 ) -> BaselineRecord:
     """Capture official-endpoint fingerprints and write one baseline file.
 
@@ -674,12 +719,30 @@ async def record_baseline(
 
     if not model.strip():
         raise ValueError("model must not be empty")
-    if not endpoint.strip():
-        raise ValueError("endpoint must not be empty")
-    if "?" in endpoint or "#" in endpoint:
-        raise ValueError("endpoint must be a base URL without query/fragment")
+    validate_baseline_endpoint(endpoint)
     if samples < 1 or streams < 1:
         raise ValueError("samples/streams must be >= 1")
+    if budget_usd is not None and budget_usd <= 0:
+        raise ValueError("budget_usd must be positive")
+    if timeout_s <= 0:
+        raise ValueError("timeout_s must be positive")
+
+    # Budget preflight is deliberately before path creation, client setup,
+    # evidence initialization, and every endpoint request.  The planner is a
+    # pure domain function, so a rejected cap leaves no recording artifacts.
+    if budget_usd is not None:
+        plan = plan_baseline_record(
+            model=model,
+            samples=samples,
+            streams=streams,
+            run_p0_gate=run_p0_gate,
+        )
+        if plan.estimated_max_usd > budget_usd:
+            raise BaselineRecordingError(
+                "retry-aware baseline planning estimate "
+                f"${plan.estimated_max_usd:.10f} exceeds budget cap ${budget_usd:.10f}; "
+                "BudgetTracker remains the runtime cap"
+            )
     out_root = Path(out)
     out_root.mkdir(parents=True, exist_ok=True)
     evidence_root = Path(evidence_root) if evidence_root else Path("runs")
@@ -690,7 +753,7 @@ async def record_baseline(
         evidence_root / "evidence", run_id, key_fingerprint=key_fingerprint(api_key)
     )
     surface = SurfaceMap()
-    client = httpx.AsyncClient(transport=transport, timeout=60.0)
+    client = httpx.AsyncClient(transport=transport, timeout=timeout_s)
     ctx = RunContext(
         endpoint=endpoint,
         api_key=api_key,
@@ -699,7 +762,7 @@ async def record_baseline(
         surface=surface,
         client=client,
         evidence=evidence,
-        budget=BudgetTracker(model=model),
+        budget=BudgetTracker(budget_usd=budget_usd, model=model),
     )
     try:
         if run_p0_gate:
@@ -709,20 +772,34 @@ async def record_baseline(
                 raise BaselineRecordingError(
                     f"p0.echo gate failed on the recording run (docs/08 §10.1): {detail}"
                 )
+            _raise_if_budget_blocked(ctx, next_stage="p0.models")
         await ModelsProbe().run(ctx)  # fills ctx.surface: catalog + claimed_present
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.responses")
 
         responses, _ = await request_or_none(
             ctx, "baseline.capture.responses", "POST", "/responses",
-            payload={"model": model, "input": "ping"},
+            payload={
+                "model": model,
+                "input": "ping",
+                "max_output_tokens": _RESPONSES_MAX_OUTPUT_TOKENS,
+            },
         )
         surface.responses_api = responses is not None and responses.status_code == 200
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.chat")
 
         chats = await _capture_chats(ctx, model, samples)
         surface.messages_api = any(status == 200 for status in chats["statuses"])
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.stream")
         streams_result = await _capture_streams(ctx, model, streams)
+        _raise_if_budget_blocked(ctx, next_stage="baseline.capture.self_report")
         self_reports = await _capture_self_reports(ctx, model, samples)
         billing_encoding = RecountDeviationProbe.tokenizer.resolve_encoding(model)
+        _raise_if_budget_blocked(
+            ctx,
+            next_stage=("d4.recount_deviation" if billing_encoding is not None else "baseline.save"),
+        )
         billing = await _capture_billing(ctx) if billing_encoding is not None else {}
+        _raise_if_budget_blocked(ctx, next_stage="baseline.save")
 
         notes = [
             "recorded against an official endpoint (operator-managed reference)",

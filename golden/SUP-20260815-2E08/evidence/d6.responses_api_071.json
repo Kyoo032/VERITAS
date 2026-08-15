@@ -1,0 +1,75 @@
+{
+  "probe": "d6.responses_api",
+  "key_fingerprint": "sha256:41792711af357a00984ac536f86ac070dc81020f797c0f03710225bd222d8b03",
+  "request": {
+    "method": "POST",
+    "url": "https://api.supplier.example/v1/responses",
+    "headers": {
+      "Authorization": "Bearer $SUPGATE_KEY",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "gpt-5.4",
+      "input": "Say hi."
+    },
+    "curl": "curl -sS -X POST 'https://api.supplier.example/v1/responses' \\\n  -H 'accept: */*' \\\n  -H 'Authorization: Bearer $SUPGATE_KEY' \\\n  -H 'content-type: application/json' \\\n  -d '{\"model\":\"gpt-5.4\",\"input\":\"Say hi.\"}'"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "alt-svc": "h3=\":443\"; ma=2592000",
+      "cache-control": "no-cache",
+      "content-length": "357",
+      "content-type": "application/json",
+      "date": "Sat, 15 Aug 2026 11:05:57 GMT",
+      "expires": "0",
+      "openai-processing-ms": "12096",
+      "pragma": "no-cache",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      "server": "nginx",
+      "vary": "Accept-Encoding",
+      "via": "1.1 Caddy",
+      "x-client-request-id": "6f31a379-acd1-4a05-a012-ac3e85b687f6",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-new-api-version": "modelsell-2026.08.05",
+      "x-oneapi-request-id": "202608151105456939566668268d9d64cEjZ5RU",
+      "x-ratelimit-limit-requests": "60",
+      "x-ratelimit-limit-tokens": "1000000",
+      "x-ratelimit-remaining-requests": "59",
+      "x-ratelimit-remaining-tokens": "1000000",
+      "x-ratelimit-reset-requests": "1s",
+      "x-ratelimit-reset-tokens": "60s",
+      "x-request-id": "req_6afe86221aef46b2",
+      "x-served-by": "liantongapi"
+    },
+    "body": {
+      "id": "resp_083dddcc248c4478984dbe43",
+      "object": "response",
+      "created_at": 1786791957,
+      "model": "gpt-5-4",
+      "output": [
+        {
+          "type": "message",
+          "id": "msg_a9351f50a8a84a14bf468186",
+          "status": "completed",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "",
+              "annotations": []
+            }
+          ]
+        }
+      ],
+      "status": "completed",
+      "usage": {
+        "input_tokens": 4389,
+        "output_tokens": 6,
+        "total_tokens": 4395
+      }
+    }
+  },
+  "captured_at": "2026-08-15T11:06:09.760863+00:00"
+}

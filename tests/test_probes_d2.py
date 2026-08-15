@@ -506,7 +506,11 @@ async def test_load_timing_starts_after_semaphore(tmp_path):
     still measures only server latency (~equal to the unqueued request),
     while the wall clock covers wait + processing."""
     app = D2StreamApp()
-    app.first_token_delay_ms = 40
+    # 250 ms server latency makes the timing assertions robust to event-loop
+    # scheduling noise on loaded machines (observed ~25-45 ms of noise on a
+    # 40 ms delay during a full-suite run); queue-wait leakage would still
+    # push r1's TTFT ~250 ms above r0's.
+    app.first_token_delay_ms = 250
     app.chunk_gap_ms = 0
     app.chunk_count = 1
     app.completion_tokens = 3
@@ -521,9 +525,10 @@ async def test_load_timing_starts_after_semaphore(tmp_path):
     assert r0["outcome"] == "success" and r1["outcome"] == "success"
     assert r0["queued_ms"] <= 5.0  # the first request did not queue
     assert r1["queued_ms"] >= 25.0  # the second request really queued behind the first
-    # If TTFT included queue wait, r1's would be ~2x r0's (~wait + latency).
-    assert abs(r1["ttft_ms"] - r0["ttft_ms"]) <= 15.0
-    assert r1["ttft_ms"] <= 60.0  # just server latency, not wait + latency
+    # If TTFT included queue wait, r1's would be ~2x r0's (~wait + latency);
+    # correct behavior keeps the diff far below half the measured queue wait.
+    assert abs(r1["ttft_ms"] - r0["ttft_ms"]) <= r1["queued_ms"] * 0.5
+    assert r1["ttft_ms"] <= 400.0  # just server latency, not wait + latency
     # The wall clock covers the queue wait AND the post-semaphore exchange.
     assert elapsed_ms >= r1["queued_ms"] + r1["ttft_ms"] - 5.0
     assert (lm := result.metrics["load_matrix"]["queue_wait_ms"])

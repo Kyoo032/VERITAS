@@ -203,6 +203,14 @@ class RunBundle(BaseModel):
     run_id: str
     endpoint: str
     claimed_models: list[str]
+    key_env: str | None = Field(
+        default=None,
+        description="Environment variable that supplied the API key (name only, never the key)",
+    )
+    key_fingerprint: str | None = Field(
+        default=None,
+        description="SHA-256 fingerprint of the API key used; one-way, safe to persist",
+    )
     mode: str
     started_at: str
     finished_at: str | None = None

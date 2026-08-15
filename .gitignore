@@ -13,3 +13,4 @@ dist/
 baselines/*.json
 .opencode/
 opencode.json
+VERITAS-test-results-*.pdf

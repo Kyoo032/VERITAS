@@ -130,6 +130,8 @@ class BaselineRecord(BaseModel):
     model: str = ""
     model_version: str | None = None
     endpoint: str = ""
+    key_env: str = ""
+    key_fingerprint: str = ""
     captured_at: str = ""
     claimed_models: list[str] = Field(default_factory=list)
     surface: BaselineSurface = Field(default_factory=BaselineSurface)

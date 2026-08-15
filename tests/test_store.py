@@ -79,6 +79,49 @@ def _make_m1_db(path: Path) -> None:
         conn.close()
 
 
+_V2_RUNS_DDL = """
+CREATE TABLE runs (
+    run_id TEXT PRIMARY KEY,
+    endpoint TEXT,
+    model TEXT,
+    mode TEXT,
+    started_at TEXT,
+    overall REAL,
+    assurance TEXT,
+    bundle_path TEXT,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    baseline_id TEXT,
+    calibration_json TEXT
+)
+"""
+
+_V2_BASELINES_DDL = """
+CREATE TABLE baselines (
+    baseline_id TEXT PRIMARY KEY,
+    provider_label TEXT,
+    claimed_models TEXT,
+    captured_at TEXT,
+    fingerprints_json TEXT,
+    bundle_path TEXT
+)
+"""
+
+
+def _make_v2_db(path: Path) -> None:
+    """Recreate a schema-2 store (pre key-identity columns) with one row."""
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(_V2_RUNS_DDL)
+        conn.execute(_M1_PROBE_RESULTS_DDL)
+        conn.execute(_V2_BASELINES_DDL)
+        conn.execute("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (*_M1_ROW, 1, None, None))
+        conn.execute("INSERT INTO probe_results VALUES (?, ?, ?, ?, ?, ?, ?)", _M1_PROBE_ROW)
+        conn.execute("PRAGMA user_version = 2")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _table_columns(path: Path, table: str) -> list[str]:
     conn = sqlite3.connect(path)
     try:
@@ -160,10 +203,10 @@ def _schema2_bundle() -> RunBundle:
 # --- fresh database ----------------------------------------------------------
 
 
-def test_fresh_db_creates_schema_2(tmp_path: Path):
+def test_fresh_db_creates_schema_3(tmp_path: Path):
     path = tmp_path / "history.db"
     RunStore(path)
-    assert _user_version(path) == SCHEMA_VERSION == 2
+    assert _user_version(path) == SCHEMA_VERSION == 3
     assert _table_columns(path, "runs") == [
         "run_id",
         "endpoint",
@@ -176,6 +219,8 @@ def test_fresh_db_creates_schema_2(tmp_path: Path):
         "schema_version",
         "baseline_id",
         "calibration_json",
+        "key_env",
+        "key_fingerprint",
     ]
     assert _table_columns(path, "probe_results") == [
         "run_id",
@@ -195,6 +240,8 @@ def test_fresh_db_creates_schema_2(tmp_path: Path):
         "captured_at",
         "fingerprints_json",
         "bundle_path",
+        "key_env",
+        "key_fingerprint",
     ]
     assert _table_columns(path, "vetoes") == ["run_id", "code", "detail"]
 
@@ -219,7 +266,7 @@ def test_m1_db_migrates_and_preserves_rows(tmp_path: Path):
 
     RunStore(path)
 
-    assert _user_version(path) == 2
+    assert _user_version(path) == 3
     assert _table_columns(path, "runs") == [
         "run_id",
         "endpoint",
@@ -232,6 +279,8 @@ def test_m1_db_migrates_and_preserves_rows(tmp_path: Path):
         "schema_version",
         "baseline_id",
         "calibration_json",
+        "key_env",
+        "key_fingerprint",
     ]
     assert _table_columns(path, "probe_results") == [
         "run_id",
@@ -260,10 +309,39 @@ def test_m1_db_migrates_and_preserves_rows(tmp_path: Path):
             FROM probe_results
             """
         ).fetchone()
+        key_identity = conn.execute("SELECT key_env, key_fingerprint FROM runs").fetchone()
     finally:
         conn.close()
     assert run == (*_M1_ROW, 1, None, None)  # M1 row preserved; schema defaults to 1
     assert probe == (*_M1_PROBE_ROW, None, None)  # probe row preserved; new columns NULL
+    assert key_identity == (None, None)  # v3 key columns default NULL for legacy rows
+
+
+def test_v2_db_migrates_to_v3_preserving_rows(tmp_path: Path):
+    path = tmp_path / "history.db"
+    _make_v2_db(path)
+    assert _user_version(path) == 2
+    store = RunStore(path)
+    assert _user_version(path) == 3
+    assert _table_columns(path, "baselines") == [
+        "baseline_id",
+        "provider_label",
+        "claimed_models",
+        "captured_at",
+        "fingerprints_json",
+        "bundle_path",
+        "key_env",
+        "key_fingerprint",
+    ]
+    conn = sqlite3.connect(path)
+    try:
+        run = conn.execute("SELECT run_id, key_env, key_fingerprint FROM runs").fetchone()
+        probes = conn.execute("SELECT COUNT(*) FROM probe_results").fetchone()[0]
+    finally:
+        conn.close()
+    assert run == ("SUP-20260806-00A1", None, None)
+    assert probes == 1
+    assert store.history()[0]["run_id"] == "SUP-20260806-00A1"
 
 
 def test_migration_is_idempotent(tmp_path: Path):
@@ -272,7 +350,7 @@ def test_migration_is_idempotent(tmp_path: Path):
     RunStore(path)
     store = RunStore(path)  # re-open after migration: no-op, no errors
     store._init_schema()  # explicit re-run of the migration path
-    assert _user_version(path) == 2
+    assert _user_version(path) == 3
     assert _table_columns(path, "runs").count("schema_version") == 1
     conn = sqlite3.connect(path)
     try:
@@ -473,3 +551,36 @@ def test_record_run_defensively_redacts_artifact_fields(tmp_path: Path):
     serialized = json.dumps({"runs": rows, "probes": probes, "vetoes": vetoes})
     assert secret not in serialized
     assert "$SUPGATE_KEY" in serialized
+
+
+def test_record_run_persists_key_identity(tmp_path: Path):
+    store = RunStore(tmp_path / "history.db")
+    bundle = _schema2_bundle()
+    bundle.key_env = "MY_OFFICIAL_KEY"
+    bundle.key_fingerprint = "sha256:" + "cd" * 32
+    store.record_run(bundle)
+    conn = sqlite3.connect(store.path)
+    try:
+        row = conn.execute("SELECT key_env, key_fingerprint FROM runs").fetchone()
+    finally:
+        conn.close()
+    assert row == ("MY_OFFICIAL_KEY", "sha256:" + "cd" * 32)
+
+
+def test_record_baseline_persists_key_identity(tmp_path: Path):
+    store = RunStore(tmp_path / "history.db")
+    record = BaselineRecord(
+        baseline_id="BL-OFFICIAL-OPENAI-GPT4O-0001",
+        provider_label="openai",
+        claimed_models=["gpt-4o"],
+        captured_at="2026-08-06T00:00:00+00:00",
+        key_env="MY_OFFICIAL_KEY",
+        key_fingerprint="sha256:" + "ef" * 32,
+    )
+    store.record_baseline(record)
+    conn = sqlite3.connect(store.path)
+    try:
+        row = conn.execute("SELECT key_env, key_fingerprint FROM baselines").fetchone()
+    finally:
+        conn.close()
+    assert row == ("MY_OFFICIAL_KEY", "sha256:" + "ef" * 32)

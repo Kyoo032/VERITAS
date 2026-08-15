@@ -106,7 +106,10 @@ Each run writes under `--out` (default `runs/`):
 
 - **`SUP-YYYYMMDD-XXXX.json`** — schema-2 run bundle: identity, versions,
   tokenizer cost, baseline provenance, scores, assurance, vetoes, and one
-  evidence-backed result per probe.
+  evidence-backed result per probe. The bundle records the key source env
+  name and a one-way SHA-256 **key fingerprint** (`key_env` /
+  `key_fingerprint`) so artifacts are traceable to the exact key — the raw
+  key is never stored.
 - **`evidence/SUP-YYYYMMDD-XXXX/`** — one JSON file per request/response
   exchange. API keys become `sk-abc****WXYZ` stubs and the `Authorization`
   header becomes `Bearer $SUPGATE_KEY`, so artifacts are safe to share. Each

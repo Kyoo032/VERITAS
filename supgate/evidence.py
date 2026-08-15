@@ -146,12 +146,13 @@ def build_curl(
 class EvidenceWriter:
     """Writes redacted request/response pairs to disk per probe sample."""
 
-    def __init__(self, root: Path, run_id: str) -> None:
+    def __init__(self, root: Path, run_id: str, key_fingerprint: str | None = None) -> None:
         self.dir = root / run_id
         self.dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0
         self._refs: dict[str, list[str]] = {}
         self._curls: dict[str, list[str]] = {}
+        self.key_fingerprint = key_fingerprint
 
     def refs_for(self, probe_id: str) -> list[str]:
         return list(self._refs.get(probe_id, []))
@@ -183,6 +184,7 @@ class EvidenceWriter:
         safe_curl = redact_text(curl, secrets)
         doc = {
             "probe": probe_id,
+            "key_fingerprint": self.key_fingerprint,
             "request": {
                 "method": method,
                 "url": redact_url(url, secrets),

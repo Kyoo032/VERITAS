@@ -266,3 +266,29 @@ def test_evidence_writer_captures_redacted_curl(tmp_path: Path):
 
 def test_evidence_writer_curl_for_missing_probe_is_none(tmp_path: Path):
     assert EvidenceWriter(tmp_path, "SUP-TEST").curl_for("nope") is None
+
+
+def test_redact_google_api_key_in_body():
+    token = "AIza" + "SyA" + "b" * 32  # AIza prefix + 35 token chars
+    out = redact_secrets(f"endpoint echoed google key {token} in body")
+    assert token not in out
+    assert out == f"endpoint echoed google key AIzaSy****{token[-4:]} in body"
+
+
+def test_redact_github_token_in_body():
+    token = "ghp_" + "a1B2c3D4e5" * 4  # ghp_ prefix + 40 token chars
+    out = redact_secrets(f"leaked {token}")
+    assert token not in out
+    assert out == f"leaked ghp_a1****{token[-4:]}"
+
+
+def test_secure_write_restricts_posix_permissions(tmp_path: Path):
+    import os
+
+    from supgate.evidence import secure_write
+
+    path = tmp_path / "doc.json"
+    secure_write(path, '{"redacted": true}')
+    assert path.read_text(encoding="utf-8") == '{"redacted": true}'
+    if os.name == "posix":
+        assert path.stat().st_mode & 0o777 == 0o600

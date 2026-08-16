@@ -33,7 +33,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from supgate.evidence import redact_payload
+from supgate.evidence import redact_payload, secure_write
 
 BASELINE_SCHEMA_VERSION = 2
 
@@ -313,7 +313,7 @@ class BaselineStore:
             )
         path.parent.mkdir(parents=True, exist_ok=True)
         doc = redact_payload(record.model_dump(mode="json"))
-        path.write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
+        secure_write(path, json.dumps(doc, indent=2, default=str))
         return path
 
     def _load_file(self, path: Path) -> BaselineRecord:

@@ -421,7 +421,7 @@ account ownership and the live cost line remain operator decisions.
    - new or changed veto signals -> Disqualified alert;
    - D4/D2/D8 regression vs prior run -> alert;
    - goodput below pass bar -> alert.
-5. Export failed probes as numbered QA issues (`supgate export-qa`) for the gateway.
+5. Export failed probes as numbered QA issues (`supgate export-qa`) 
 
 ## 14. Live endpoint acceptance flow (target M2)
 

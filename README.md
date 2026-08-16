@@ -164,9 +164,11 @@ The suite runs against a deterministic fake server — no paid calls, no network
 - Assurance `B` is reachable in `full` mode; white-box `A` is out of scope.
 - D8 Claude Messages, authenticity v1.1, HTML/PDF reports, and QA export are
   later-milestone carry-over.
-- Operator keys unlock official OpenAI/Anthropic baselines and the supplier live
-  run; the operator sequence, bug packet, and debug loop are in
-  `docs/12-operator-test-plan.md`.
+- Field-tested end to end: a DeepSeek supplier surface via OpenCode Zen Go
+  (`deepseek-v4-flash`, `docs/12-operator-test-plan.md`) and an official-key
+  OpenAI gateway run that scored 82.0 as the genuine-model reference — the
+  committed golden bundle and report live in `golden/` and
+  `docs/13-field-test-report.md`.
 
 ## Documentation
 

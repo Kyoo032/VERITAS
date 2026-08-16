@@ -23,7 +23,7 @@ Sources: `supgate-build-plan.md` (Notion export, 6 Aug 2026), M1 repo state, ref
 
 | User | Role | Primary use |
 | --- | --- | --- |
-| Rizky | QA / product | Supplier admission, ongoing assurance, QA ammunition for the gateway |
+| Rizky | QA / product | Supplier admission, ongoing assurance, QA ammunition  |
 | the reviewer | Commercial evidence | Partner trust and SLA evidence; attach reports to commercial documents |
 | White-label partners | Future service consumers | Scored, evidence-backed reports as a paid service |
 
@@ -71,7 +71,7 @@ Sources: `supgate-build-plan.md` (Notion export, 6 Aug 2026), M1 repo state, ref
 | Output | JSON run bundle (the contract) + rendered HTML/PDF report, redacted evidence, reproducible curls |
 | Scoring | Weighted domain means + Supply Assurance Level + independent veto layer |
 | History | SQLite run history; M6 adds scheduled reruns and trend spot-checks |
-| Integrations | QA-issue export for the gateway; baseline recording against official endpoints |
+| Integrations | QA-issue export ; baseline recording against official endpoints |
 
 ### Out of scope (product)
 

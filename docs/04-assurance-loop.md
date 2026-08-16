@@ -430,8 +430,8 @@ requires D4 >= 80, D8 >= 80, overall >= 70 in `scoring.assurance()`).
 
 ## 4.12 Incident and QA Export Path
 
-Failed probes convert directly into the numbered-list QA issue format used by
-the gateway (build plan section 1, "QA ammunition"). The path is identical for
+Failed probes convert directly into the numbered-list QA issue format (build
+plan section 1, "QA ammunition"). The path is identical for
 admission rejects and monitoring drift.
 
 Flow:
@@ -446,7 +446,7 @@ flowchart LR
     REM --> RE["Re-run admission or re-enroll monitoring"]
 ```
 
-Issue template (locked to the the gateway submission format):
+Issue template (locked submission format):
 
 | Field | Source |
 | --- | --- |

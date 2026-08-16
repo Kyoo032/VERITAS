@@ -12,7 +12,7 @@
   - **Supplier admission** — score a candidate upstream/channel supplier before it enters production.
   - **Ongoing assurance** — scheduled reruns against production endpoints (natural extension of the Daily Model Health Monitor).
   - **Partner trust & SLA evidence** — attach reports to commercial docs (assurance level, goodput vs SLA thresholds).
-  - **QA ammunition** — failed probes convert directly into the numbered-list QA issue format for the gateway.
+  - **QA ammunition** — failed probes convert directly into the numbered-list QA issue format.
 
 ## 2. Test Domains
 
@@ -47,7 +47,7 @@ Black-box probes strongly evidence substitution/tampering but never cryptographi
 
 - **Input:** endpoint base URL, API key, claimed model name(s), mode (`adhoc` quick scan / `full` profile), optional client SLA thresholds.
 - **Output:** JSON result bundle + rendered report (HTML → PDF per the PDF Export Style Guide) — overall score, assurance level + basis, domain table, per-probe detail with redacted reproducible curls, transit topology, methodology appendix.
-- **Users:** Rizky (QA/product), the reviewer (commercial evidence); later white-label partners as a service.
+- **Users:** Rizky (QA/product) with an independent commercial-evidence reviewer; later white-label partners as a service.
 
 ## 5. Architecture
 

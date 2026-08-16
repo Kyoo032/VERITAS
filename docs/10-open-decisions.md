@@ -8,7 +8,7 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
 
 | ID | Decision | Owner | Deadline | Recommendation | Blocks |
 | --- | --- | --- | --- | --- | --- |
-| OD-01 | Baseline account ownership and cost | Rizky (budget: supplier) | Fri Aug 7 | Dedicated supplier eval keys on the company cost line | S3 baselines, M2 veto verification, M5 authenticity |
+| OD-01 | Baseline account ownership and cost | Rizky (budget: personal) | Fri Aug 7 | Dedicated supplier eval keys on the personal cost line | S3 baselines, M2 veto verification, M5 authenticity |
 | OD-02 | Storage home for run bundles and reports | Rizky | Sun Aug 9 | Repo `runs/` for bundles; QA Reports attachments for final PDFs | M4 report distribution, M6 history |
 | OD-03 | SLA tiers | Rizky + the reviewer | Sun Aug 9 | One global default + optional per-service-tier table | D2 goodput, SLA evidence |
 | OD-04 | Report audience and distribution | the reviewer | Fri Aug 7 | Internal by default; partner-facing gated by commercial review | Legal wording, M4, M6 |
@@ -25,10 +25,10 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
 - **Owner:** Rizky (budget line: personal).
 - **Deadline:** Fri Aug 7 (before Sat baseline recording).
 - **Options:**
-  - (a) Dedicated supplier eval keys on the company cost line (new OpenAI + Anthropic org keys).
-  - (b) Personal keys (existing subscriptions), low cost, but mixes personal and company spend.
+  - (a) Dedicated supplier eval keys on the personal cost line (new OpenAI + Anthropic org keys).
+  - (b) Personal keys (existing subscriptions), low cost, but mixes personal and project spend.
   - (c) Shared account for the whole team, simplest but couples team usage.
-- **Recommendation:** (a) dedicated eval keys on a personal cost line. Personal keys only as a fallback if the company line cannot be provisioned by the deadline. Operators choose the key-env name and provide the endpoint explicitly on every run; there are no shared key/endpoint defaults.
+- **Recommendation:** (a) dedicated eval keys on a personal cost line. Personal keys only as a fallback if a dedicated line cannot be provisioned by the deadline. Operators choose the key-env name and provide the endpoint explicitly on every run; there are no shared key/endpoint defaults.
 - **Blocking impact:** without a baseline key, S3 baseline recording and M2 veto verification degrade to fixture-only replays; M5 authenticity baselines (cutoff battery, RNG fingerprint, logprob audit) cannot be calibrated. This is the single highest-risk open item.
 
 ## OD-02 -- Storage home for run bundles and reports
@@ -70,7 +70,7 @@ How to use: resolve or update rows as the weekend plan (see `05-weekend-executio
 - **Owner:** the reviewer.
 - **Deadline:** Sun Aug 9 (before first report is shared outside the team).
 - **Options:**
-  - (a) Reuse existing supplier / white-label SLA and commercial wording where it exists.
+  - (a) Reuse existing white-label SLA and commercial wording where it exists.
   - (b) In-house template drafted by the team.
   - (c) Counsel-reviewed template.
 - **Recommendation:** (a) for immediate use, with (c) before the first partner-facing report ships. Calibrated verdict language (consistent / suspected substitution / confirmed tampering) is mandatory in every report regardless of option.

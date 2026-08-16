@@ -16,7 +16,7 @@ The system is a **personal, black-box admission and assurance tool** for any
 OpenAI-compatible endpoint (upstream supplier, relay gateway, white-label
 domain). It produces a scored, evidence-backed report that supports four uses:
 supplier admission, ongoing assurance, partner trust/SLA evidence, and QA issue
-export for the gateway.
+export 
 
 Design goals, in priority order:
 

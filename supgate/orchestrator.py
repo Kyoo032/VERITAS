@@ -19,7 +19,7 @@ from supgate.baselines import (
     BaselineStore,
     select_baseline,
 )
-from supgate.evidence import EvidenceWriter, redact_payload
+from supgate.evidence import EvidenceWriter, redact_payload, secure_write
 from supgate.keyid import key_fingerprint
 from supgate.models import (
     SLA,
@@ -267,7 +267,7 @@ class Orchestrator:
         safe_payload = redact_payload(bundle.model_dump(mode="json"), (api_key,))
         bundle = RunBundle.model_validate(safe_payload)
         bundle_path = out_dir / f"{run_id}.json"
-        bundle_path.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
+        secure_write(bundle_path, bundle.model_dump_json(indent=2))
         return bundle
 
     async def _run_probe(

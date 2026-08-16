@@ -21,6 +21,7 @@ RunBundle defaults while schema-2 fields land in models.py).
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -89,6 +90,8 @@ class RunStore:
         self.path = path or Path.home() / ".supgate" / "history.db"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        if os.name == "posix":
+            os.chmod(self.path, 0o600)
 
     def _init_schema(self) -> None:
         with self._connect() as conn:

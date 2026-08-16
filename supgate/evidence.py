@@ -8,6 +8,7 @@ printing the secret.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,10 @@ from typing import Any
 
 _KEY = re.compile(r"(sk-[A-Za-z0-9_-]{4,})")
 _BEARER = re.compile(r"(Bearer\s+)([A-Za-z0-9._-]{8,})")
+# Non-OpenAI credential shapes that can appear verbatim in endpoint-controlled
+# response bodies: Google API keys and GitHub tokens (classic + fine-grained).
+_GOOGLE_KEY = re.compile(r"(AIza[0-9A-Za-z_\-]{35})")
+_GITHUB_TOKEN = re.compile(r"(gh[pousr]_[A-Za-z0-9]{36,255})")
 _URL = re.compile(r"https?://[^\s\"'<>]+")
 # Custom auth header names: x-api-key, api-key, access-token, authorization, ...
 _SENSITIVE_HEADER = re.compile(
@@ -38,6 +43,14 @@ _CURL_SKIP_HEADERS = frozenset(
 )
 
 
+def _key_stub(token: str) -> str:
+    """Recognizable but non-reconstructable stub: ``prefix****suffix``."""
+
+    if len(token) > 10:
+        return token[:6] + "****" + token[-4:]
+    return token[:5] + "****"
+
+
 def redact_secrets(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
     """Redact sk- keys and bearer tokens, keeping a recognizable stub.
 
@@ -46,10 +59,7 @@ def redact_secrets(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
     """
 
     def _key_repl(m: re.Match[str]) -> str:
-        tok = m.group(1)
-        if len(tok) > 10:
-            return tok[:6] + "****" + tok[-4:]
-        return tok[:5] + "****"
+        return _key_stub(m.group(1))
 
     def _bearer_repl(m: re.Match[str]) -> str:
         tok = m.group(2)
@@ -59,7 +69,9 @@ def redact_secrets(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
 
     for secret in sorted({value for value in extra_secrets if len(value) >= 4}, key=len, reverse=True):
         text = text.replace(secret, _REDACTED)
-    return _KEY.sub(_key_repl, _BEARER.sub(_bearer_repl, text))
+    text = _KEY.sub(_key_repl, _BEARER.sub(_bearer_repl, text))
+    text = _GOOGLE_KEY.sub(_key_repl, text)
+    return _GITHUB_TOKEN.sub(_key_repl, text)
 
 
 def redact_payload(payload: Any, extra_secrets: tuple[str, ...] = ()) -> Any:
@@ -118,6 +130,18 @@ def redact_headers(headers: dict[str, str]) -> dict[str, str]:
         elif isinstance(out[k], str):
             out[k] = redact_text(out[k])
     return out
+
+
+def secure_write(path: Path, text: str) -> None:
+    """Write UTF-8 text, then restrict POSIX permissions to owner-only (0600).
+
+    Windows has no POSIX mode bits (only a read-only flag), so the chmod is
+    skipped there; evidence inherits the user-profile ACLs instead.
+    """
+
+    path.write_text(text, encoding="utf-8")
+    if os.name == "posix":
+        os.chmod(path, 0o600)
 
 
 def build_curl(
@@ -199,7 +223,7 @@ class EvidenceWriter:
             },
             "captured_at": datetime.now(UTC).isoformat(),
         }
-        (self.dir / name).write_text(json.dumps(doc, indent=2, default=str), encoding="utf-8")
+        secure_write(self.dir / name, json.dumps(doc, indent=2, default=str))
         ref = f"{self.dir.name}/{name}"
         self._refs.setdefault(probe_id, []).append(ref)
         self._curls.setdefault(probe_id, []).append(safe_curl)
